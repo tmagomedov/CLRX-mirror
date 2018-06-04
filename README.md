@@ -190,6 +190,7 @@ Useful options for clrxdisasm:
 * -a - print everything (not only code, but also kernels and their metadatas)
 * -f - print floating points
 * -h - print hexadecimal instruction codes
+* -p - print hexadecimal code position
 * -C - print configuration dump instead metadatas, CALnotes and setup data
 * -g DEVICETYPE - device type ('pitcairn', 'bonaire'...)
 * -A ARCH - architecture ('gcn1.0', 'gcn1.1', 'gcn1.2' or 'gcn1.4')

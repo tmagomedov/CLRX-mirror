@@ -72,7 +72,7 @@ try
         return 1;
     }
     
-    Flags disasmFlags = DISASM_DUMPCODE|DISASM_CODEPOS;
+    Flags disasmFlags = DISASM_DUMPCODE;
     if (cli.hasShortOption('a'))
         disasmFlags = DISASM_ALL;
     else
@@ -81,7 +81,8 @@ try
             (cli.hasShortOption('c')?DISASM_CALNOTES:0) |
             (cli.hasShortOption('s')?DISASM_SETUP:0) |
             (cli.hasShortOption('f')?DISASM_FLOATLITS:0) |
-            (cli.hasShortOption('h')?DISASM_HEXCODE:0);
+            (cli.hasShortOption('h')?DISASM_HEXCODE:0) |
+            (cli.hasShortOption('p')?DISASM_CODEPOS:0);
      disasmFlags |= (cli.hasShortOption('C')?DISASM_CONFIG:0) |
              (cli.hasLongOption("buggyFPLit")?DISASM_BUGGYFPLIT:0) |
              (cli.hasShortOption('H')?DISASM_HSACONFIG:0);
