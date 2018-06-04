@@ -41,6 +41,8 @@ static const CLIOption programOptions[] =
     { "floats", 'f', CLIArgType::NONE, false, false, "display float literals", nullptr },
     { "hexcode", 'h', CLIArgType::NONE, false, false,
         "display hexadecimal instr. codes", nullptr },
+    { "hexpos", 'p', CLIArgType::NONE, false, false,
+        "display hexadecimal code position", nullptr },
     { "all", 'a', CLIArgType::NONE, false, false,
         "dump all (including hexcode and float literals)", nullptr },
     { "raw", 'r', CLIArgType::NONE, false, false, "treat input as raw GCN code", nullptr },
