@@ -117,12 +117,13 @@ enum
  * ROCm format handler
  */
 
-AsmROCmHandler::AsmROCmHandler(Assembler& assembler): AsmFormatHandler(assembler),
-             output{}, codeSection(0), commentSection(ASMSECT_NONE),
+AsmROCmHandler::AsmROCmHandler(Assembler& assembler):
+             AsmKcodeHandler(assembler), output{}, commentSection(ASMSECT_NONE),
              metadataSection(ASMSECT_NONE), dataSection(ASMSECT_NONE),
              gotSection(ASMSECT_NONE), extraSectionCount(0),
              prevSymbolsCount(0), unresolvedGlobals(false), good(true)
 {
+    codeSection = 0;
     sectionDiffsResolvable = true;
     output.newBinFormat = assembler.isNewROCmBinFormat();
     output.metadataInfo.initialize();
@@ -133,7 +134,6 @@ AsmROCmHandler::AsmROCmHandler(Assembler& assembler): AsmFormatHandler(assembler
     // add text section as first
     sections.push_back({ ASMKERN_GLOBAL, AsmSectionType::CODE,
                 ELFSECTID_TEXT, ".text" });
-    currentKcodeKernel = ASMKERN_GLOBAL;
     savedSection = 0;
 }
 
@@ -143,15 +143,14 @@ AsmROCmHandler::~AsmROCmHandler()
         delete kernel;
 }
 
-cxuint AsmROCmHandler::addKernel(const char* kernelName)
+AsmKernelId AsmROCmHandler::addKernel(const char* kernelName)
 {
-    cxuint thisKernel = output.symbols.size();
-    cxuint thisSection = sections.size();
+    AsmKernelId thisKernel = output.symbols.size();
+    AsmSectionId thisSection = sections.size();
     output.addEmptyKernel(kernelName);
     /// add kernel config section
     sections.push_back({ thisKernel, AsmSectionType::CONFIG, ELFSECTID_UNDEF, nullptr });
-    kernelStates.push_back(
-        new Kernel{ thisSection, nullptr, false, ASMSECT_NONE, thisSection });
+    kernelStates.push_back(new Kernel(thisSection));
     output.metadataInfo.kernels.push_back(ROCmKernelMetadata());
     output.metadataInfo.kernels.back().initialize();
     output.metadataInfo.kernels.back().name = kernelName;
@@ -164,9 +163,9 @@ cxuint AsmROCmHandler::addKernel(const char* kernelName)
     return thisKernel;
 }
 
-cxuint AsmROCmHandler::addSection(const char* sectionName, cxuint kernelId)
+AsmSectionId AsmROCmHandler::addSection(const char* sectionName, AsmKernelId kernelId)
 {
-    const cxuint thisSection = sections.size();
+    const AsmSectionId thisSection = sections.size();
     Section section;
     section.kernelId = ASMKERN_GLOBAL;  // we ignore input kernelId, we go to main
     
@@ -219,7 +218,7 @@ cxuint AsmROCmHandler::addSection(const char* sectionName, cxuint kernelId)
     return thisSection;
 }
 
-cxuint AsmROCmHandler::getSectionId(const char* sectionName) const
+AsmSectionId AsmROCmHandler::getSectionId(const char* sectionName) const
 {
     if (::strcmp(sectionName, ".rodata") == 0) // data
         return dataSection;
@@ -237,7 +236,7 @@ cxuint AsmROCmHandler::getSectionId(const char* sectionName) const
     return ASMSECT_NONE;
 }
 
-void AsmROCmHandler::setCurrentKernel(cxuint kernel)
+void AsmROCmHandler::setCurrentKernel(AsmKernelId kernel)
 {
     if (kernel != ASMKERN_GLOBAL && kernel >= kernelStates.size())
         throw AsmFormatException("KernelId out of range");
@@ -254,7 +253,7 @@ void AsmROCmHandler::setCurrentKernel(cxuint kernel)
         assembler.currentSection = savedSection;
 }
 
-void AsmROCmHandler::setCurrentSection(cxuint sectionId)
+void AsmROCmHandler::setCurrentSection(AsmSectionId sectionId)
 {
     if (sectionId >= sections.size())
         throw AsmFormatException("SectionId out of range");
@@ -269,7 +268,7 @@ void AsmROCmHandler::setCurrentSection(cxuint sectionId)
 }
 
 
-AsmFormatHandler::SectionInfo AsmROCmHandler::getSectionInfo(cxuint sectionId) const
+AsmFormatHandler::SectionInfo AsmROCmHandler::getSectionInfo(AsmSectionId sectionId) const
 {
     if (sectionId >= sections.size())
         throw AsmFormatException("Section doesn't exists");
@@ -303,54 +302,16 @@ AsmFormatHandler::SectionInfo AsmROCmHandler::getSectionInfo(cxuint sectionId) c
     return info;
 }
 
-void AsmROCmHandler::restoreKcodeCurrentAllocRegs()
+bool AsmROCmHandler::isCodeSection() const
 {
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        Kernel& newKernel = *kernelStates[currentKcodeKernel];
-        assembler.isaAssembler->setAllocatedRegisters(newKernel.allocRegs,
-                            newKernel.allocRegFlags);
-    }
+    return sections[assembler.currentSection].type == AsmSectionType::CODE;
 }
 
-void AsmROCmHandler::saveKcodeCurrentAllocRegs()
-{
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        // save other state
-        size_t regTypesNum;
-        Kernel& oldKernel = *kernelStates[currentKcodeKernel];
-        const cxuint* regs = assembler.isaAssembler->getAllocatedRegisters(
-                            regTypesNum, oldKernel.allocRegFlags);
-        std::copy(regs, regs+regTypesNum, oldKernel.allocRegs);
-    }
-}
+AsmKcodeHandler::KernelBase& AsmROCmHandler::getKernelBase(AsmKernelId index)
+{ return *kernelStates[index]; }
 
-
-void AsmROCmHandler::handleLabel(const CString& label)
-{
-    if (assembler.sections[assembler.currentSection].type != AsmSectionType::CODE)
-        return;
-    auto kit = assembler.kernelMap.find(label);
-    if (kit == assembler.kernelMap.end())
-        return;
-    if (!kcodeSelection.empty())
-        return; // do not change if inside kcode
-    // add code start
-    assembler.sections[assembler.currentSection].addCodeFlowEntry({
-                    size_t(assembler.currentOutPos), 0, AsmCodeFlowType::START });
-    // save other state
-    saveKcodeCurrentAllocRegs();
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-        assembler.kernels[currentKcodeKernel].closeCodeRegion(
-                        assembler.sections[codeSection].content.size());
-    // restore this state
-    currentKcodeKernel = kit->second;
-    restoreKcodeCurrentAllocRegs();
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-        assembler.kernels[currentKcodeKernel].openCodeRegion(
-                        assembler.sections[codeSection].content.size());
-}
+size_t AsmROCmHandler::getKernelsNum() const
+{ return kernelStates.size(); }
 
 void AsmROCmHandler::Kernel::initializeKernelConfig()
 {
@@ -467,7 +428,7 @@ void AsmROCmPseudoOps::doControlDirective(AsmROCmHandler& handler,
     if (kernel.ctrlDirSection == ASMSECT_NONE)
     {
         // define control directive section (if not exists)
-        cxuint thisSection = handler.sections.size();
+        AsmSectionId thisSection = handler.sections.size();
         handler.sections.push_back({ asmr.currentKernel,
             AsmSectionType::ROCM_CONFIG_CTRL_DIRECTIVE,
             ELFSECTID_UNDEF, nullptr });
@@ -507,11 +468,11 @@ void AsmROCmPseudoOps::addMetadata(AsmROCmHandler& handler, const char* pseudoOp
     if (!checkGarbagesAtEnd(asmr, linePtr))
         return;
     
-    cxuint& metadataSection = handler.metadataSection;
+    AsmSectionId& metadataSection = handler.metadataSection;
     if (metadataSection == ASMSECT_NONE)
     {
         /* add this section */
-        cxuint thisSection = handler.sections.size();
+        AsmSectionId thisSection = handler.sections.size();
         handler.sections.push_back({ ASMKERN_GLOBAL, AsmSectionType::ROCM_METADATA,
             ELFSECTID_UNDEF, nullptr });
         metadataSection = thisSection;
@@ -1848,7 +1809,7 @@ void AsmROCmPseudoOps::addGotSymbol(AsmROCmHandler& handler,
     if (handler.gotSection == ASMSECT_NONE)
     {
         // create GOT section
-        cxuint thisSection = handler.sections.size();
+        AsmSectionId thisSection = handler.sections.size();
         handler.sections.push_back({ ASMKERN_GLOBAL,
             AsmSectionType::ROCM_GOT, ROCMSECTID_GOT, nullptr });
         handler.gotSection = thisSection;
@@ -1877,136 +1838,6 @@ void AsmROCmPseudoOps::addGotSymbol(AsmROCmHandler& handler,
     }
     // set GOT section size
     asmr.sections[handler.gotSection].size = handler.gotSymbols.size()*8;
-}
-
-
-void AsmROCmPseudoOps::updateKCodeSel(AsmROCmHandler& handler,
-                  const std::vector<cxuint>& oldset)
-{
-    Assembler& asmr = handler.assembler;
-    // old elements - join current regstate with all them
-    size_t regTypesNum;
-    for (auto it = oldset.begin(); it != oldset.end(); ++it)
-    {
-        Flags curAllocRegFlags;
-        const cxuint* curAllocRegs = asmr.isaAssembler->getAllocatedRegisters(regTypesNum,
-                               curAllocRegFlags);
-        cxuint newAllocRegs[MAX_REGTYPES_NUM];
-        AsmROCmHandler::Kernel& kernel = *(handler.kernelStates[*it]);
-        for (size_t i = 0; i < regTypesNum; i++)
-            newAllocRegs[i] = std::max(curAllocRegs[i], kernel.allocRegs[i]);
-        kernel.allocRegFlags |= curAllocRegFlags;
-        std::copy(newAllocRegs, newAllocRegs+regTypesNum, kernel.allocRegs);
-    }
-    asmr.isaAssembler->setAllocatedRegisters();
-}
-
-void AsmROCmPseudoOps::doKCode(AsmROCmHandler& handler, const char* pseudoOpPlace,
-                  const char* linePtr)
-{
-    Assembler& asmr = handler.assembler;
-    const char* end = asmr.line + asmr.lineSize;
-    bool good = true;
-    skipSpacesToEnd(linePtr, end);
-    if (linePtr==end)
-        return;
-    std::unordered_set<cxuint> newSel(handler.kcodeSelection.begin(),
-                          handler.kcodeSelection.end());
-    do {
-        CString kname;
-        const char* knamePlace = linePtr;
-        skipSpacesToEnd(linePtr, end);
-        bool removeKernel = false;
-        if (linePtr!=end && *linePtr=='-')
-        {
-            // '-' - remove this kernel from current kernel selection
-            removeKernel = true;
-            linePtr++;
-        }
-        else if (linePtr!=end && *linePtr=='+')
-        {
-            linePtr++;
-            skipSpacesToEnd(linePtr, end);
-            if (linePtr==end)
-            {
-                // add all kernels
-                for (cxuint k = 0; k < handler.kernelStates.size(); k++)
-                    newSel.insert(k);
-                break;
-            }
-        }
-        
-        if (!getNameArg(asmr, kname, linePtr, "kernel"))
-        { good = false; continue; }
-        auto kit = asmr.kernelMap.find(kname);
-        if (kit == asmr.kernelMap.end())
-        {
-            asmr.printError(knamePlace, "Kernel not found");
-            continue;
-        }
-        if (!removeKernel)
-            newSel.insert(kit->second);
-        else // remove kernel
-            newSel.erase(kit->second);
-    } while (skipCommaForMultipleArgs(asmr, linePtr));
-    
-    if (!good || !checkGarbagesAtEnd(asmr, linePtr))
-        return;
-    
-    if (handler.sections[asmr.currentSection].type != AsmSectionType::CODE)
-        PSEUDOOP_RETURN_BY_ERROR("KCode outside code")
-    if (handler.kcodeSelStack.empty())
-        handler.saveKcodeCurrentAllocRegs();
-    // push to stack
-    handler.kcodeSelStack.push(handler.kcodeSelection);
-    // set current sel
-    handler.kcodeSelection.assign(newSel.begin(), newSel.end());
-    std::sort(handler.kcodeSelection.begin(), handler.kcodeSelection.end());
-    
-    const std::vector<cxuint>& oldKCodeSel = handler.kcodeSelStack.top();
-    if (!oldKCodeSel.empty())
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
-                            handler.codeSection);
-    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        std::vector<cxuint> tempKCodeSel;
-        tempKCodeSel.push_back(handler.currentKcodeKernel);
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, tempKCodeSel,
-                            handler.codeSection);
-    }
-    
-    updateKCodeSel(handler, handler.kcodeSelStack.top());
-}
-
-void AsmROCmPseudoOps::doKCodeEnd(AsmROCmHandler& handler, const char* pseudoOpPlace,
-                  const char* linePtr)
-{
-    Assembler& asmr = handler.assembler;
-    if (handler.sections[asmr.currentSection].type != AsmSectionType::CODE)
-        PSEUDOOP_RETURN_BY_ERROR("KCodeEnd outside code")
-    if (handler.kcodeSelStack.empty())
-        PSEUDOOP_RETURN_BY_ERROR("'.kcodeend' without '.kcode'")
-    if (!checkGarbagesAtEnd(asmr, linePtr))
-        return;
-    
-    updateKCodeSel(handler, handler.kcodeSelection);
-    std::vector<cxuint> oldKCodeSel = handler.kcodeSelection;
-    handler.kcodeSelection = handler.kcodeSelStack.top();
-    
-    if (!handler.kcodeSelection.empty())
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
-                        handler.codeSection);
-    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        // if choosen current kernel
-        std::vector<cxuint> curKernelSel;
-        curKernelSel.push_back(handler.currentKcodeKernel);
-        asmr.handleRegionsOnKernels(curKernelSel, oldKCodeSel, handler.codeSection);
-    }
-    
-    handler.kcodeSelStack.pop();
-    if (handler.kcodeSelStack.empty())
-        handler.restoreKcodeCurrentAllocRegs();
 }
 
 }
@@ -2104,10 +1935,10 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
                              ROCMCVAL_IEEEMODE);
             break;
         case ROCMOP_KCODE:
-            AsmROCmPseudoOps::doKCode(*this, stmtPlace, linePtr);
+            AsmKcodePseudoOps::doKCode(*this, stmtPlace, linePtr);
             break;
         case ROCMOP_KCODEEND:
-            AsmROCmPseudoOps::doKCodeEnd(*this, stmtPlace, linePtr);
+            AsmKcodePseudoOps::doKCodeEnd(*this, stmtPlace, linePtr);
             break;
         case ROCMOP_KERNARG_SEGMENT_ALIGN:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
@@ -2366,20 +2197,7 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
     size_t sectionsNum = sections.size();
     output.deviceType = assembler.getDeviceType();
     
-    if (assembler.isaAssembler!=nullptr)
-    {
-        // make last kernel registers pool updates
-        if (kcodeSelStack.empty())
-            saveKcodeCurrentAllocRegs();
-        else
-            while (!kcodeSelStack.empty())
-            {
-                // pop from kcode stack and apply changes
-                AsmROCmPseudoOps::updateKCodeSel(*this, kcodeSelection);
-                kcodeSelection = kcodeSelStack.top();
-                kcodeSelStack.pop();
-            }
-    }
+    prepareKcodeState();
     
     // set sections as outputs
     for (size_t i = 0; i < sectionsNum; i++)
@@ -2684,9 +2502,9 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
         assembler.sections[codeSection].relAddress =
                     binGen->getSectionOffset(ELFSECTID_TEXT);
         
-        Array<cxuint> relSections(1 + (dataSection != ASMSECT_NONE) +
+        Array<AsmSectionId> relSections(1 + (dataSection != ASMSECT_NONE) +
                     (gotSection != ASMSECT_NONE));
-        cxuint relSectionId = 0;
+        AsmSectionId relSectionId = 0;
         if (dataSection != ASMSECT_NONE)
         {
             assembler.sections[dataSection].relAddress =
@@ -2746,7 +2564,7 @@ void AsmROCmHandler::addSymbols(bool sectionDiffsPrepared)
             if (symEntry.second.sectionId==dataSection)
                 info = ELF32_ST_INFO(ELF32_ST_BIND(symEntry.second.info), STT_OBJECT);
             
-            cxuint binSectId = (symEntry.second.sectionId != ASMSECT_ABS) ?
+            AsmSectionId binSectId = (symEntry.second.sectionId != ASMSECT_ABS) ?
                     sections[symEntry.second.sectionId].elfBinSectId : ELFSECTID_ABS;
             if (binSectId==ELFSECTID_UNDEF)
                 continue; // no section

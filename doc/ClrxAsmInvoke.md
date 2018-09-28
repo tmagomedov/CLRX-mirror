@@ -54,15 +54,18 @@ Assembler accepts following formats: 'amd', 'amdcl2', 'gallium', 'rocm', 'rawcod
 
     Choose device type. Device type name is case-insensitive.
 List of supported GPUs: 
-CapeVerde, Pitcairn, Tahiti, Oland, Bonaire, Spectre, Spooky, Kalindi,
-Hainan, Hawaii, Iceland, Tonga, Mullins, Fiji, Carrizo, Dummy, Goose, Horse, Stoney,
-Ellesmere, Baffin, GFX804, GFX900, GFX901, GFX902, GFX903, GFX904 and GFX905.
+Baffin, Bonaire, CapeVerde, Carrizo, Dummy, Ellesmere, Fiji, GFX700, GFX701, GFX801,
+GFX802, GFX803, GFX804, GFX900, GFX901, GFX902, GFX903, GFX904, GFX905, GFX906, GFX907,
+Goose, Hainan, Hawaii, Horse, Iceland, Kalindi, Mullins, Oland, Pitcairn, Polaris10,
+Polaris11, Polaris12, Polaris20, Polaris21, Polaris22, Raven, Spectre, Spooky, Stoney,
+Tahiti, Tonga, Topaz, Vega10, Vega11, Vega12 and Vega20.
 
 * **-A ARCH**, **--arch=ARCH**
 
     Choose device architecture. Architecture name is case-insensitive.
 List of supported architectures:
-SI, VI, CI, VEGA, GFX6, GFX7, GFX8, GFX9, GCN1.0, GCN1.1, GCN1.2 and GCN1.4.
+SI, VI, CI, VEGA, VEGA20, GFX6, GFX7, GFX8, GFX9, GFX907, GCN1.0, GCN1.1, GCN1.2,
+GCN1.4 and GCN1.4.1.
 
 * **-t VERSION**, **--driverVersion=VERSION**
 
@@ -147,3 +150,15 @@ An assembler generates single output binary. If no output specified an assembler
 generate `a.out` binary file. `clrxasm` returns 0 if succeeded, otherwise
 it returns 1 and prints the error messages to stderr.
 
+### Sample usage
+
+Following sample usages:
+
+* `clrxasm -o output.clo source.clrx`
+
+    Assemble source code 'source.clrx' to binary output 'output.clo'.
+
+* `clrxasm -bamdcl2 -6 -t240500 -o output.clo source.clrx`
+
+    Assemble source code 'source.clrx' to AMD OpenCL 2.0  binary format output 'output.clo' with
+64-bits and for driver version 240500.

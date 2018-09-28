@@ -244,11 +244,31 @@ static const SourcePosHandlerTestCase sourcePoHandlerTestTbl[] =
         { 24307, "", "file0.s", 8, 5 },
         { 24627, "", "file0.s", 11, 9 }
     },
-    // 26 - big diffs in offset
+    // 27 - big diffs in offset
     {
         { 100, "", "file0.s", 1, 9 },
         { 164, "", "file0.s", 1, 9 },
         { 228, "", "file0.s", 1, 9 }
+    },
+    // 28 - big diffs in offset 2
+    {
+        { 100, "", "file0.s", 1, 9 },
+        { 164, "", "file0.s", 2, 9 },
+        { 229, "", "file0.s", 3, 4 },
+        { 292, "", "file0.s", 4, 5 },
+        { 124292, "", "file0.s", 6, 5 },
+        { 524307, "", "file0.s", 8, 5 },
+        { 594627, "", "file0.s", 11, 9 },
+        { 791112, "", "file0.s", 12, 9 },
+        { 1472678, "", "file0.s", 14, 9 }
+    },
+    // 29 - bigger colNo
+    {
+        { 8, "", "file0.s", 1, 2331 },
+        { 12, "", "file0.s", 2, 552567 },
+        { 18, "", "file0.s", 2, 578567 },
+        { 23, "", "file0.s", 3, 773215 },
+        { 28, "", "file0.s", 3, 7 }
     }
 };
 
@@ -299,7 +319,7 @@ static void testAsmSourcePosHandler(cxuint i, const SourcePosHandlerTestCase& te
     const std::string testCaseName = oss.str();
     
     // testing reading
-    sourcePosHandler.rewind();
+    AsmSourcePosHandler::ReadPos sourcePosPos{ 0, 0 };
     for (size_t j = 0; j < testCase.size(); j++)
     {
         const SourcePosEntry& entry = testCase[j];
@@ -308,10 +328,12 @@ static void testAsmSourcePosHandler(cxuint i, const SourcePosHandlerTestCase& te
         eOss.flush();
         const std::string eName = eOss.str();
         
-        if (!sourcePosHandler.hasNext())
-            assertTrue(testCaseName, eName+".size match", sourcePosHandler.hasNext());
+        if (!sourcePosHandler.hasNext(sourcePosPos))
+            assertTrue(testCaseName, eName+".size match",
+                       sourcePosHandler.hasNext(sourcePosPos));
         
-        const std::pair<size_t, AsmSourcePos> result = sourcePosHandler.nextSourcePos();
+        const std::pair<size_t, AsmSourcePos> result = sourcePosHandler.nextSourcePos(
+                    sourcePosPos);
         CString resultSourceName;
         CString resultMacroName;
         auto sit = revSourceMap.find(result.second.source.get());
@@ -328,7 +350,7 @@ static void testAsmSourcePosHandler(cxuint i, const SourcePosHandlerTestCase& te
         assertValue(testCaseName, eName+".lineNo", entry.lineNo, result.second.lineNo);
         assertValue(testCaseName, eName+".colNo", entry.colNo, result.second.colNo);
     }
-    assertTrue(testCaseName, "noNext", !sourcePosHandler.hasNext());
+    assertTrue(testCaseName, "noNext", !sourcePosHandler.hasNext(sourcePosPos));
 }
 
 int main(int argc, const char** argv)

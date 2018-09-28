@@ -50,6 +50,9 @@ s_mov_b32       s14, (gdata+160)&0xffffffff
 The CLRX assembler allow to use one of two ways to configure kernel setup:
 for human (`.config`) and for quick recompilation (kernel setup, stub, metadata content).
 
+In the HSA layout mode the kernel codes in single main code section and no code section
+for each kernel. The HSA layout mode can be enabled only for newer binary format.
+
 ## Register usage setup
 
 The CLRX assembler automatically sets number of used VGPRs and number of used SGPRs.
@@ -313,6 +316,13 @@ This pseudo-op must be inside kernel HSA configuration (`.hsaconfig`). Set
 Open kernel HSA configuration. Must be inside kernel. Kernel configuration can not be
 defined if any isametadata, metadata or stub was defined. Do not mix with `.config`.
 
+### .hsalayout
+
+This pseudo-op enabled HSA layout mode (source code layout similar to Gallium binary format
+layout or ROCm layout) where code of the kernels is in single main code section and
+kernels are aligned and kernel setup is skipped in section code.
+Only allowed for newer driver version binaries.
+
 ### .ieeemode
 
 This pseudo-op must be inside any kernel configuration. Set ieee-mode.
@@ -325,6 +335,33 @@ Go to inner binary place. By default assembler is in main binary.
 
 This pseudo-operation must be inside kernel. Go to ISA metadata content
 (only older driver binaries).
+
+### .kcode
+
+Syntax: .kcode KERNEL1,....  
+Syntax: .kcode +
+
+Open code that will be belonging to specified kernels. By default any code between
+two consecutive kernel labels belongs to the kernel with first label name.
+This pseudo-operation can change membership of the code to specified kernels.
+You can nest this `.kcode` any times. Just next .kcode adds or remove membership code
+to kernels. The most important reason why this feature has been added is register usage
+calculation. Any kernel given in this pseudo-operation must be already defined.
+
+Sample usage:
+
+```
+.kcode + # this code belongs to all kernels
+.kcodeend
+.kcode kernel1, kernel2 #  this code belongs to kernel1, kernel2
+    .kcode -kernel1 #  this code belongs only to kernel2 (kernel1 removed)
+    .kcodeend
+.kcodeend
+```
+
+### .kcodeend
+
+Close `.kcode` clause. Refer to `.kcode`.
 
 ### .kernarg_segment_align
 
@@ -718,6 +755,60 @@ This is sample of the kernel with configuration:
         .arg inverse,uint
         .......
     .text
+/*c0000501         */ s_load_dword    s0, s[4:5], 0x1
+....
+/*bf810000         */ s_endpgm
+```
+
+This is sample of two kernels with configuration in HSA layout mode:
+
+```
+.amdcl2
+.64bit
+.gpu Bonaire
+.driver_version 191205
+.hsalayout
+.compile_options "-I ./ -cl-std=CL2.0"
+.acl_version "AMD-COMP-LIB-v0.8 (0.0.SC_BUILD_NUMBER)"
+.kernel DCT
+    .config
+        .dims xy
+        .useargs
+        .usesetup
+        .setupargs
+        .arg output,float*
+        .arg input,float*
+        .arg dct8x8,float*
+        .arg dct8x8_trans,float*
+        .arg inter,float*,local
+        .arg width,uint
+        .arg blockWidth,uint
+        .arg inverse,uint
+        .......
+.kernel DCT2
+    .config
+        .dims xy
+        .useargs
+        .usesetup
+        .setupargs
+        .arg output,float*
+        .arg input,float*
+        .arg dct8x8,float*
+        .arg dct8x8_trans,float*
+        .arg inter,float*,local
+        .arg width,uint
+        .arg blockWidth,uint
+        .arg inverse,uint
+        .......
+.text
+DCT:
+.skip 256   # setup kernel skip
+/*c0000501         */ s_load_dword    s0, s[4:5], 0x1
+....
+/*bf810000         */ s_endpgm
+.p2align 8            # important alignment to 256-byte boundary
+DCT2:
+.skip 256   # setup kernel skip
 /*c0000501         */ s_load_dword    s0, s[4:5], 0x1
 ....
 /*bf810000         */ s_endpgm

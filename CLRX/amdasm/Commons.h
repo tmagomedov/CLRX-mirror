@@ -29,7 +29,12 @@
 namespace CLRX
 {
 
-/// binary for Disassembler
+/// type for Asm kernel id (index)
+typedef cxuint AsmKernelId;
+/// type for Asm section id (index)
+typedef cxuint AsmSectionId;
+
+/// binary format for Assembler/Disassembler
 enum class BinaryFormat
 {
     AMD = 0,    ///< AMD CATALYST format

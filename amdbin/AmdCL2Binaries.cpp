@@ -956,6 +956,32 @@ static const CL2GPUDeviceCodeEntry cl2_2527GpuDeviceCodeTable[] =
     { 27, GPUDeviceType::GFX905 }
 };
 
+static const CL2GPUDeviceCodeEntry cl2_2580GpuDeviceCodeTable[] =
+{
+    { 1, GPUDeviceType::SPECTRE },
+    { 2, GPUDeviceType::SPOOKY },
+    { 3, GPUDeviceType::KALINDI },
+    { 4, GPUDeviceType::MULLINS },
+    { 6, GPUDeviceType::BONAIRE },
+    { 7, GPUDeviceType::HAWAII },
+    { 8, GPUDeviceType::ICELAND },
+    { 9, GPUDeviceType::TONGA },
+    { 12, GPUDeviceType::CARRIZO },
+    { 13, GPUDeviceType::FIJI },
+    { 14, GPUDeviceType::STONEY },
+    { 16, GPUDeviceType::BAFFIN },
+    { 18, GPUDeviceType::ELLESMERE },
+    { 20, GPUDeviceType::GFX900 },
+    { 21, GPUDeviceType::GFX804 },
+    { 23, GPUDeviceType::GFX901 },
+    { 24, GPUDeviceType::GFX902 },
+    { 25, GPUDeviceType::GFX903 },
+    { 26, GPUDeviceType::GFX904 },
+    { 27, GPUDeviceType::GFX905 },
+    { 28, GPUDeviceType::GFX906 },
+    { 29, GPUDeviceType::GFX907 }
+};
+
 struct CLRX_INTERNAL CL2GPUCodeTable
 {
     cxuint toDriverVersion;   // to driver version
@@ -985,8 +1011,22 @@ static const CL2GPUCodeTable cl2CodeTables[] =
         sizeof(cl2_2442GpuDeviceCodeTable)/sizeof(CL2GPUDeviceCodeEntry) },
     { 252700U, cl2_2482GpuDeviceCodeTable,
         sizeof(cl2_2482GpuDeviceCodeTable)/sizeof(CL2GPUDeviceCodeEntry) },
-    { UINT_MAX, cl2_2527GpuDeviceCodeTable,
-        sizeof(cl2_2527GpuDeviceCodeTable)/sizeof(CL2GPUDeviceCodeEntry) }
+    { 258000U, cl2_2527GpuDeviceCodeTable,
+        sizeof(cl2_2527GpuDeviceCodeTable)/sizeof(CL2GPUDeviceCodeEntry) },
+    { UINT_MAX, cl2_2580GpuDeviceCodeTable,
+        sizeof(cl2_2580GpuDeviceCodeTable)/sizeof(CL2GPUDeviceCodeEntry) }
+};
+
+static const GPUDeviceType gpuGFX9SteppingTable[] =
+{
+    GPUDeviceType::GFX900,
+    GPUDeviceType::GFX901,
+    GPUDeviceType::GFX902,
+    GPUDeviceType::GFX903,
+    GPUDeviceType::GFX904,
+    GPUDeviceType::GFX905,
+    GPUDeviceType::GFX906,
+    GPUDeviceType::GFX907
 };
 
 template<typename Types>
@@ -1079,10 +1119,15 @@ GPUDeviceType AmdCL2MainGPUBinaryBase::determineGPUDeviceTypeInt(
                             ((major == 8) ? GPUArchitecture::GCN1_2 :
                             GPUArchitecture::GCN1_4);
                     deviceType = getLowestGPUDeviceTypeFromArchitecture(arch);
-                    // special case for GFX901
-                    if (major == 9 && archMinor == 0 && archStepping == 1)
-                        deviceType = GPUDeviceType::GFX901;
-                    
+                    // determine GPU type from arch minor,stepping for GFX9
+                    if (major == 9 && archMinor == 0)
+                    {
+                        if (archStepping <
+                            sizeof(gpuGFX9SteppingTable)/sizeof(GPUDeviceType))
+                            deviceType = gpuGFX9SteppingTable[archStepping];
+                        else // default
+                            deviceType = GPUDeviceType::GFX900;
+                    }
                     knownGPUType = true;
                 }
             }
@@ -1097,6 +1142,51 @@ GPUDeviceType AmdCL2MainGPUBinaryBase::determineGPUDeviceTypeInt(
     outArchMinor = archMinor;
     outArchStepping = archStepping;
     return deviceType;
+}
+
+static const cxuint cl2GPUDeviceTypeMinDriverVersion[] =
+{
+    UINT_MAX, // CAPE_VERDE = 0, ///< Radeon HD7700
+    UINT_MAX, // PITCAIRN, ///< Radeon HD7800
+    UINT_MAX, // TAHITI, ///< Radeon HD7900
+    UINT_MAX, // OLAND, ///< Radeon R7 250
+    180005U, // BONAIRE, ///< Radeon R7 260
+    180005U, // SPECTRE, ///< Kaveri
+    180005U, // SPOOKY, ///< Kaveri
+    180005U, // KALINDI, ///< ???  GCN1.1
+    UINT_MAX, // HAINAN, ///< ????  GCN1.0
+    180005U, // HAWAII, ///< Radeon R9 290
+    180005U, // ICELAND, ///< ???
+    180005U, // TONGA, ///< Radeon R9 285
+    180005U, // MULLINS, ///< ???
+    180005U, // FIJI,  ///< Radeon Fury
+    180005U, // CARRIZO, ///< APU
+    191205U, // DUMMY,
+    200406U, // GOOSE,
+    200406U, // HORSE,
+    200406U, // STONEY,
+    200406U, // ELLESMERE,
+    200406U, // BAFFIN,
+    223600U, // GFX804,
+    223600U, // GFX900,
+    226400U, // GFX901,
+    252700U, // GFX902,
+    252700U, // GFX903,
+    252700U, // GFX904,
+    252700U, // GFX905,
+    258000U, // GFX906,
+    258000U  // GFX907,
+};
+
+cxuint AmdCL2MainGPUBinaryBase::determineMinDriverVersionForGPUDeviceType(
+                GPUDeviceType devType)
+{
+    if (devType > GPUDeviceType::GPUDEVICE_MAX)
+        throw Exception("Wrong device type");
+    const cxuint minDriverVersion = cl2GPUDeviceTypeMinDriverVersion[cxuint(devType)];
+    if (minDriverVersion == UINT_MAX)
+        throw Exception("Device is not supported by this format");
+    return minDriverVersion;
 }
 
 /* AMD CL2 32-bit */

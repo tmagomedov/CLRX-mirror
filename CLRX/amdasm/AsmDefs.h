@@ -65,22 +65,7 @@ enum : AsmExprTargetType
     ASMXTGT_DATA16,     ///< target is 16-bit word
     ASMXTGT_DATA32,     ///< target is 32-bit word
     ASMXTGT_DATA64,     ///< target is 64-bit word
-    ASMXTGT_CODEFLOW,    ///< code flow entry
-    
-    GCNTGT_LITIMM = 16,
-    GCNTGT_SOPKSIMM16,
-    GCNTGT_SOPJMP,
-    GCNTGT_SMRDOFFSET,
-    GCNTGT_DSOFFSET16,
-    GCNTGT_DSOFFSET8_0,
-    GCNTGT_DSOFFSET8_1,
-    GCNTGT_MXBUFOFFSET,
-    GCNTGT_SMEMOFFSET,
-    GCNTGT_SOPCIMM8,
-    GCNTGT_SMEMIMM,
-    GCNTGT_SMEMOFFSETVEGA,
-    GCNTGT_INSTOFFSET,
-    GCNTGT_INSTOFFSET_S
+    ASMXTGT_CODEFLOW    ///< code flow entry
 };
 
 /*
@@ -158,7 +143,7 @@ struct AsmScope;
 struct AsmSymbol
 {
     cxuint refCount;    ///< reference counter (for internal use only)
-    cxuint sectionId;       ///< section id
+    AsmSectionId sectionId;       ///< section id
     cxbyte info;           ///< ELF symbol info
     cxbyte other;           ///< ELF symbol other
     cxuint hasValue:1;         ///< symbol is defined
@@ -194,8 +179,8 @@ struct AsmSymbol
             value(0), size(0), expression(expr)
     { }
     /// constructor with value and section id
-    explicit AsmSymbol(cxuint _sectionId, uint64_t _value, bool _onceDefined = false) :
-            refCount(1), sectionId(_sectionId), info(0), other(0), hasValue(true),
+    explicit AsmSymbol(AsmSectionId _sectionId, uint64_t _value, bool _onceDefined = false)
+            : refCount(1), sectionId(_sectionId), info(0), other(0), hasValue(true),
             onceDefined(_onceDefined), resolving(false), base(false), snapshot(false),
             regRange(false), detached(false), withUnevalExpr(false),
             value(_value), size(0), expression(nullptr)
@@ -230,7 +215,7 @@ struct AsmExprTarget
     {
         AsmSymbolEntry* symbol; ///< symbol entry (if ASMXTGT_SYMBOL)
         struct {
-            cxuint sectionId;   ///< section id of destination
+            AsmSectionId sectionId;   ///< section id of destination
             union {
                 size_t offset;      ///< offset of destination
                 size_t cflowId;     ///< cflow index of destination
@@ -241,7 +226,7 @@ struct AsmExprTarget
     AsmExprTarget() { }
     
     /// constructor to create custom target
-    AsmExprTarget(AsmExprTargetType _type, cxuint _sectionId, size_t _offset)
+    AsmExprTarget(AsmExprTargetType _type, AsmSectionId _sectionId, size_t _offset)
             : type(_type), sectionId(_sectionId), offset(_offset)
     { }
     
@@ -254,7 +239,7 @@ struct AsmExprTarget
         return target;
     }
     /// make code flow target for expression
-    static AsmExprTarget codeFlowTarget(cxuint sectionId, size_t cflowIndex)
+    static AsmExprTarget codeFlowTarget(AsmSectionId sectionId, size_t cflowIndex)
     {
         AsmExprTarget target;
         target.type = ASMXTGT_CODEFLOW;
@@ -265,7 +250,7 @@ struct AsmExprTarget
     
     /// make n-bit word target for expression
     template<typename T>
-    static AsmExprTarget dataTarget(cxuint sectionId, size_t offset)
+    static AsmExprTarget dataTarget(AsmSectionId sectionId, size_t offset)
     {
         AsmExprTarget target;
         target.type = (sizeof(T)==1) ? ASMXTGT_DATA8 : (sizeof(T)==2) ? ASMXTGT_DATA16 :
@@ -279,12 +264,12 @@ struct AsmExprTarget
 /// assembler relocation
 struct AsmRelocation
 {
-    cxuint sectionId;   ///< section id where relocation is present
+    AsmSectionId sectionId;   ///< section id where relocation is present
     size_t offset;  ///< offset of relocation
     RelocType type; ///< relocation type
     union {
         AsmSymbolEntry* symbol; ///< symbol
-        cxuint relSectionId;    ///< section for which relocation is defined
+        AsmSectionId relSectionId;    ///< section for which relocation is defined
     };
     uint64_t addend;    ///< addend
 };
@@ -362,7 +347,7 @@ public:
      * \return operation status
      */
     AsmTryStatus tryEvaluate(Assembler& assembler, size_t opStart, size_t opEnd,
-                  uint64_t& value, cxuint& sectionId, bool withSectionDiffs = false) const;
+            uint64_t& value, AsmSectionId& sectionId, bool withSectionDiffs = false) const;
     
     /// try to evaluate expression with/without section differences
     /** 
@@ -372,7 +357,7 @@ public:
      * \param withSectionDiffs evaluate including precalculated section differences
      * \return operation status
      */
-    AsmTryStatus tryEvaluate(Assembler& assembler, uint64_t& value, cxuint& sectionId,
+    AsmTryStatus tryEvaluate(Assembler& assembler, uint64_t& value, AsmSectionId& sectionId,
                     bool withSectionDiffs = false) const
     { return tryEvaluate(assembler, 0, ops.size(), value, sectionId, withSectionDiffs); }
     
@@ -383,7 +368,7 @@ public:
      * \param sectionId output section id
      * \return true if evaluated
      */
-    bool evaluate(Assembler& assembler, uint64_t& value, cxuint& sectionId) const
+    bool evaluate(Assembler& assembler, uint64_t& value, AsmSectionId& sectionId) const
     { return tryEvaluate(assembler, 0, ops.size(), value, sectionId) !=
                     AsmTryStatus::FAILED; }
     
@@ -397,7 +382,7 @@ public:
      * \return true if evaluated
      */
     bool evaluate(Assembler& assembler, size_t opStart, size_t opEnd,
-                  uint64_t& value, cxuint& sectionId) const
+                  uint64_t& value, AsmSectionId& sectionId) const
     { return tryEvaluate(assembler, opStart, opEnd, value, sectionId) !=
                     AsmTryStatus::FAILED; }
     
@@ -447,7 +432,7 @@ public:
     
     /// substitute occurrence in expression by value
     void substituteOccurrence(AsmExprSymbolOccurrence occurrence, uint64_t value,
-                  cxuint sectionId = ASMSECT_ABS);
+                  AsmSectionId sectionId = ASMSECT_ABS);
     /// replace symbol in expression
     void replaceOccurrenceSymbol(AsmExprSymbolOccurrence occurrence,
                     AsmSymbolEntry* newSymEntry);
@@ -491,12 +476,12 @@ union AsmExprArg
     uint64_t value;         ///< value
     struct {
         uint64_t value;         ///< value
-        cxuint sectionId;       ///< sectionId
+        AsmSectionId sectionId;       ///< sectionId
     } relValue; ///< relative value (with section)
 };
 
 inline void AsmExpression::substituteOccurrence(AsmExprSymbolOccurrence occurrence,
-                        uint64_t value, cxuint sectionId)
+                        uint64_t value, AsmSectionId sectionId)
 {
     ops[occurrence.opIndex] = AsmExprOp::ARG_VALUE;
     args[occurrence.argIndex].relValue.value = value;
@@ -516,51 +501,7 @@ typedef cxbyte AsmRegField;
 
 enum : AsmRegField
 {
-    ASMFIELD_NONE = 0,
-    GCNFIELD_SSRC0,
-    GCNFIELD_SSRC1,
-    GCNFIELD_SDST,
-    GCNFIELD_SMRD_SBASE,
-    GCNFIELD_SMRD_SDST,
-    GCNFIELD_SMRD_SDSTH,
-    GCNFIELD_SMRD_SOFFSET,
-    GCNFIELD_VOP_SRC0,
-    GCNFIELD_VOP_VSRC1,
-    GCNFIELD_VOP_SSRC1,
-    GCNFIELD_VOP_VDST,
-    GCNFIELD_VOP_SDST,
-    GCNFIELD_VOP3_SRC0,
-    GCNFIELD_VOP3_SRC1,
-    GCNFIELD_VOP3_SRC2,
-    GCNFIELD_VOP3_VDST,
-    GCNFIELD_VOP3_SDST0,
-    GCNFIELD_VOP3_SSRC,
-    GCNFIELD_VOP3_SDST1,
-    GCNFIELD_VINTRP_VSRC0,
-    GCNFIELD_VINTRP_VDST,
-    GCNFIELD_DS_ADDR,
-    GCNFIELD_DS_DATA0,
-    GCNFIELD_DS_DATA1,
-    GCNFIELD_DS_VDST,
-    GCNFIELD_M_VADDR,
-    GCNFIELD_M_VDATA,
-    GCNFIELD_M_VDATAH,
-    GCNFIELD_M_VDATALAST,
-    GCNFIELD_M_SRSRC,
-    GCNFIELD_MIMG_SSAMP,
-    GCNFIELD_M_SOFFSET,
-    GCNFIELD_EXP_VSRC0,
-    GCNFIELD_EXP_VSRC1,
-    GCNFIELD_EXP_VSRC2,
-    GCNFIELD_EXP_VSRC3,
-    GCNFIELD_FLAT_ADDR,
-    GCNFIELD_FLAT_DATA,
-    GCNFIELD_FLAT_VDST,
-    GCNFIELD_FLAT_VDSTLAST,
-    GCNFIELD_DPPSDWA_SRC0,
-    GCNFIELD_DPPSDWA_SSRC0,
-    GCNFIELD_FLAT_SADDR,
-    GCNFIELD_SDWAB_SDST
+    ASMFIELD_NONE = 0
 };
 
 struct AsmScope;
@@ -624,6 +565,56 @@ struct AsmRegVarLinearDep
     const AsmRegVar* regVar;    ///< regvar
     uint16_t rstart;    ///< register start
     uint16_t rend;      ///< register end
+};
+
+enum {
+    ASM_DELAYED_OP_MAX_TYPES_NUM = 8,
+    ASM_WAIT_MAX_TYPES_NUM = 4
+};
+
+/// asm delay instr type entry
+struct AsmDelayedOpTypeEntry
+{
+    cxbyte waitType;
+    bool ordered;
+    /// waiting finished on register read out (true) or on operation
+    bool finishOnRegReadOut;
+    cxbyte counting; ///< counting (255 - per instr), 1-254 - per element size
+};
+
+/// asm wait system configuration
+struct AsmWaitConfig
+{
+    cxuint delayedOpTypesNum;
+    cxuint waitQueuesNum;
+    AsmDelayedOpTypeEntry delayOpTypes[ASM_DELAYED_OP_MAX_TYPES_NUM];
+    uint16_t waitQueueSizes[ASM_WAIT_MAX_TYPES_NUM];
+};
+
+enum : cxbyte
+{
+    ASMDELOP_NONE = 255
+};
+
+/// delayed result for register for instruction with delayed results
+struct AsmDelayedOp
+{
+    size_t offset;
+    const AsmRegVar* regVar;
+    uint16_t rstart;
+    uint16_t rend;
+    cxbyte count;
+    cxbyte delayedOpType;
+    cxbyte delayedOpType2;
+    cxbyte rwFlags:2;
+    cxbyte rwFlags2:2;
+};
+
+/// description of the WAIT instruction (for waiting for results)
+struct AsmWaitInstr
+{
+    size_t offset;
+    uint16_t waits[ASM_WAIT_MAX_TYPES_NUM];
 };
 
 /// code flow type
@@ -695,12 +686,13 @@ struct AsmScope
 
 class ISAUsageHandler;
 class ISALinearDepHandler;
+class ISAWaitHandler;
 
 /// assembler section
 struct AsmSection
 {
     const char* name;       ///< section name
-    cxuint kernelId;    ///< kernel id (optional)
+    AsmKernelId kernelId;    ///< kernel id (optional)
     AsmSectionType type;        ///< type of section
     Flags flags;   ///< section flags
     uint64_t alignment; ///< section alignment
@@ -711,13 +703,14 @@ struct AsmSection
     
     std::unique_ptr<ISAUsageHandler> usageHandler;  ///< usage handler
     std::unique_ptr<ISALinearDepHandler> linearDepHandler; ///< linear dep handler
+    std::unique_ptr<ISAWaitHandler> waitHandler; ///< wait handler
     std::vector<AsmCodeFlowEntry> codeFlow;  ///< code flow info
     AsmSourcePosHandler sourcePosHandler;
     
     /// constructor
     AsmSection();
     /// constructor
-    AsmSection(const char* _name, cxuint _kernelId, AsmSectionType _type, Flags _flags,
+    AsmSection(const char* _name, AsmKernelId _kernelId, AsmSectionType _type, Flags _flags,
                uint64_t _alignment, uint64_t _size = 0, cxuint _relSpace = UINT_MAX,
                uint64_t _relAddress = UINT64_MAX)
             : name(_name), kernelId(_kernelId), type(_type), flags(_flags),

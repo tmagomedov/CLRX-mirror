@@ -39,6 +39,12 @@ static inline void putChars(char*& buf, const char* input, size_t size)
     buf += size;
 }
 
+static inline void putCommaSpace(char*& bufPtr)
+{
+    *bufPtr++ = ',';
+    *bufPtr++ = ' ';
+}
+
 static const char* gcnOperandFloatTable[] =
 {
     "0.5", "-0.5", "1.0", "-1.0", "2.0", "-2.0", "4.0", "-4.0"
@@ -140,10 +146,10 @@ void GCNDisasmUtils::printLiteral(GCNDisassembler& dasm, size_t codePos,
 }
 
 void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
-           cxuint regNum, char*& bufPtr, uint16_t arch, FloatLitType floatLit)
+           cxuint regNum, char*& bufPtr, GPUArchMask arch, FloatLitType floatLit)
 {
     const bool isGCN12 = ((arch&ARCH_GCN_1_2_4)!=0);
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     const cxuint maxSgprsNum = getGPUMaxRegsNumByArchMask(arch, REGTYPE_SGPR);
     if ((op < maxSgprsNum) || (op >= 256 && op < 512))
     {
@@ -179,21 +185,15 @@ void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
                 break;
             case 106:
                 // vcc
-                *bufPtr++ = 'v';
-                *bufPtr++ = 'c';
-                *bufPtr++ = 'c';
+                putChars(bufPtr, "vcc", 3);
                 break;
             case 108:
                 // tba
-                *bufPtr++ = 't';
-                *bufPtr++ = 'b';
-                *bufPtr++ = 'a';
+                putChars(bufPtr, "tba", 3);
                 break;
             case 110:
                 // tma
-                *bufPtr++ = 't';
-                *bufPtr++ = 'm';
-                *bufPtr++ = 'a';
+                putChars(bufPtr, "tma", 3);
                 break;
             case 126:
                 putChars(bufPtr, "exec", 4);
@@ -203,11 +203,7 @@ void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
         if (regNum >= 2)
         {
             if (op&1) // unaligned!!
-            {
-                *bufPtr++ = '_';
-                *bufPtr++ = 'u';
-                *bufPtr++ = '!';
-            }
+                putChars(bufPtr, "_u!", 3);
             if (regNum > 2)
                 putChars(bufPtr, "&ill!", 5);
             return;
@@ -223,9 +219,7 @@ void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
     
     if (op == 255) // if literal
     {
-        *bufPtr++ = '0'; // zero 
-        *bufPtr++ = 'x'; // zero 
-        *bufPtr++ = '0'; // zero 
+        putChars(bufPtr, "0x0", 3); // zero 
         return;
     }
     
@@ -322,15 +316,11 @@ void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
             return;
         case 253:
             // scc
-            *bufPtr++ = 's';
-            *bufPtr++ = 'c';
-            *bufPtr++ = 'c';
+            putChars(bufPtr, "scc", 3);
             return;
         case 254:
             // lds
-            *bufPtr++ = 'l';
-            *bufPtr++ = 'd';
-            *bufPtr++ = 's';
+            putChars(bufPtr, "lds", 3);
             return;
     }
     
@@ -342,7 +332,7 @@ void GCNDisasmUtils::decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op,
 }
 
 char* GCNDisasmUtils::decodeGCNOperand(GCNDisassembler& dasm, size_t codePos,
-              RelocIter& relocIter, cxuint op, cxuint regNum, uint16_t arch,
+              RelocIter& relocIter, cxuint op, cxuint regNum, GPUArchMask arch,
               uint32_t literal, FloatLitType floatLit)
 {
     FastOutputBuffer& output = dasm.output;
@@ -400,7 +390,7 @@ static void addSpaces(char*& bufPtr, cxuint spacesToAdd)
 }
 
 void GCNDisasmUtils::decodeSOPCEncoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal)
 {
     FastOutputBuffer& output = dasm.output;
@@ -412,8 +402,7 @@ void GCNDisasmUtils::decodeSOPCEncoding(GCNDisassembler& dasm, size_t codePos,
     // form: INSTR SRC0, SRC1
     bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, insnCode&0xff,
                      (gcnInsn.mode&GCN_REG_SRC0_64)?2:1, arch, literal);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     if ((gcnInsn.mode & GCN_SRC1_IMM) != 0)
     {
         // if immediate in SRC1
@@ -430,10 +419,10 @@ void GCNDisasmUtils::decodeSOPCEncoding(GCNDisassembler& dasm, size_t codePos,
 
 /// about label writer - label is workaround for class hermetization
 void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-         uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+         GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
          uint32_t literal, size_t pos)
 {
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(70);
     char* bufPtr = bufStart;
@@ -474,12 +463,8 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
             if (((imm16>>4)&7) != 7 || isf7f)
             {
                 if (prevLock)
-                {
                     // print & before previous lock: vmcnt()
-                    *bufPtr++ = ' ';
-                    *bufPtr++ = '&';
-                    *bufPtr++ = ' ';
-                }
+                    putChars(bufPtr, " & ", 3);
                 putChars(bufPtr, "expcnt(", 7);
                 // print value
                 *bufPtr++ = '0' + ((imm16>>4)&7);
@@ -492,12 +477,8 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
                 /* LGKMCNT bits is 4 (5????) */
                 const cxuint lockCnt = (imm16>>8)&15;
                 if (prevLock)
-                {
                     // print & before previous lock: vmcnt()
-                    *bufPtr++ = ' ';
-                    *bufPtr++ = '&';
-                    *bufPtr++ = ' ';
-                }
+                    putChars(bufPtr, " & ", 3);
                 putChars(bufPtr, "lgkmcnt(", 8);
                 const cxuint digit2 = lockCnt/10U;
                 if (lockCnt >= 10)
@@ -510,10 +491,7 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
             {
                 /* additional info about imm16 */
                 if (prevLock)
-                {
-                    *bufPtr++ = ' ';
-                    *bufPtr++ = ':';
-                }
+                    putChars(bufPtr, " :", 2);
                 bufPtr += itocstrCStyle(imm16, bufPtr, 11, 16);
             }
             break;
@@ -542,8 +520,7 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
             if ((msgType&14) == 2 || (msgType >= minUnknownMsgType && msgType <= 14) ||
                 (imm16&0x3f0) != 0) // gs ops
             {
-                *bufPtr++ = ',';
-                *bufPtr++ = ' ';
+                putCommaSpace(bufPtr);
                 illMask = 0xfcc0; // set new illegal mask of bits
                 const cxuint gsopId = (imm16>>4)&3;
                 const char* gsopName = sendGsOpMessageTable[gsopId];
@@ -552,8 +529,7 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
                     *bufPtr++ = *gsopName++;
                 if (gsopId!=0 || ((imm16>>8)&3)!=0)
                 {
-                    *bufPtr++ = ',';
-                    *bufPtr++ = ' ';
+                    putCommaSpace(bufPtr);
                     // print gsop value
                     *bufPtr++ = '0' + ((imm16>>8)&3);
                 }
@@ -584,7 +560,7 @@ void GCNDisasmUtils::decodeSOPPEncoding(GCNDisassembler& dasm, cxuint spacesToAd
 }
 
 void GCNDisasmUtils::decodeSOP1Encoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal)
 {
     FastOutputBuffer& output = dasm.output;
@@ -603,11 +579,8 @@ void GCNDisasmUtils::decodeSOP1Encoding(GCNDisassembler& dasm, size_t codePos,
     if ((gcnInsn.mode & GCN_MASK1) != GCN_SRC_NONE)
     {
         if ((gcnInsn.mode & GCN_MASK1) != GCN_DST_NONE)
-        {
             // put ',' if destination and source
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
-        }
+            putCommaSpace(bufPtr);
         // put SRC1
         output.forward(bufPtr-bufStart);
         bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, insnCode&0xff,
@@ -629,7 +602,7 @@ void GCNDisasmUtils::decodeSOP1Encoding(GCNDisassembler& dasm, size_t codePos,
 }
 
 void GCNDisasmUtils::decodeSOP2Encoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal)
 {
     FastOutputBuffer& output = dasm.output;
@@ -642,15 +615,13 @@ void GCNDisasmUtils::decodeSOP2Encoding(GCNDisassembler& dasm, size_t codePos,
         output.forward(bufPtr-bufStart);
         bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, (insnCode>>16)&0x7f,
                          (gcnInsn.mode&GCN_REG_DST_64)?2:1, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
     }
     // print SRC0
     output.forward(bufPtr-bufStart);
     bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, insnCode&0xff,
                      (gcnInsn.mode&GCN_REG_SRC0_64)?2:1, arch, literal);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     // print SRC1
     output.forward(bufPtr-bufStart);
     bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, (insnCode>>8)&0xff,
@@ -678,7 +649,7 @@ static const char* hwregNames[20] =
 
 /// about label writer - label is workaround for class hermetization
 void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal)
 {
     FastOutputBuffer& output = dasm.output;
@@ -691,8 +662,7 @@ void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
         output.forward(bufPtr-bufStart);
         bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter, (insnCode>>16)&0x7f,
                          (gcnInsn.mode&GCN_REG_DST_64)?2:1, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
     }
     const cxuint imm16 = insnCode&0xffff;
     if ((gcnInsn.mode&GCN_MASK1) == GCN_IMM_REL)
@@ -709,7 +679,7 @@ void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
         putChars(bufPtr, "hwreg(", 6);
         const cxuint hwregId = imm16&0x3f;
         cxuint hwregNamesNum = 13 + ((arch&ARCH_GCN_1_2_4)!=0);
-        if ((arch&ARCH_RXVEGA) != 0)
+        if ((arch&ARCH_GCN_1_4) != 0)
             hwregNamesNum = 20;
         if (hwregId < hwregNamesNum)
             putChars(bufPtr, hwregNames[hwregId], ::strlen(hwregNames[hwregId]));
@@ -721,12 +691,10 @@ void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
             *bufPtr++ = '0' + digit2;
             *bufPtr++ = '0' + hwregId - digit2*10U;
         }
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // start bit
         putByteToBuf((imm16>>6)&31, bufPtr);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // size in bits
         putByteToBuf(((imm16>>11)&31)+1, bufPtr);
         *bufPtr++ = ')';
@@ -736,8 +704,7 @@ void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
     
     if (gcnInsn.mode & GCN_IMM_DST)
     {
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // print value, if some are not used, but values is not default
         if (gcnInsn.mode & GCN_SOPK_CONST)
         {
@@ -761,12 +728,12 @@ void GCNDisasmUtils::decodeSOPKEncoding(GCNDisassembler& dasm, size_t codePos,
 }
 
 void GCNDisasmUtils::decodeSMRDEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-             uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode)
+             GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode)
 {
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(100);
     char* bufPtr = bufStart;
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     bool useDst = false;
     bool useOthers = false;
     
@@ -786,13 +753,11 @@ void GCNDisasmUtils::decodeSMRDEncoding(GCNDisassembler& dasm, cxuint spacesToAd
         addSpaces(bufPtr, spacesToAdd);
         // print destination (1,2,4,8 or 16 registers)
         decodeGCNOperandNoLit(dasm, (insnCode>>15)&0x7f, dregsNum, bufPtr, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // print SBASE (base address registers) (address or resource)
         decodeGCNOperandNoLit(dasm, (insnCode>>8)&0x7e, (gcnInsn.mode&GCN_SBASE4)?4:2,
                           bufPtr, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         if (insnCode&0x100) // immediate value
             bufPtr += itocstrCStyle(insnCode&0xff, bufPtr, 11, 16);
         else // S register
@@ -838,17 +803,17 @@ void GCNDisasmUtils::decodeSMRDEncoding(GCNDisassembler& dasm, cxuint spacesToAd
 }
 
 void GCNDisasmUtils::decodeSMEMEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-         uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+         GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
          uint32_t insnCode2)
 {
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(120);
     char* bufPtr = bufStart;
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     bool useDst = false;
     bool useOthers = false;
     bool spacesAdded = false;
-    const bool isGCN14 = ((arch&ARCH_RXVEGA) != 0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4) != 0);
     bool printOffset = false;
     
     if (mode1 == GCN_SMRD_ONLYDST)
@@ -871,15 +836,13 @@ void GCNDisasmUtils::decodeSMEMEncoding(GCNDisassembler& dasm, cxuint spacesToAd
             else
                 // print destination (1,2,4,8 or 16 registers)
                 decodeGCNOperandNoLit(dasm, (insnCode>>6)&0x7f, dregsNum, bufPtr , arch);
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             useDst = true;
         }
         // print SBASE (base address registers) (address or resource)
         decodeGCNOperandNoLit(dasm, (insnCode<<1)&0x7e, (gcnInsn.mode&GCN_SBASE4)?4:2,
                           bufPtr, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         if (insnCode&0x20000) // immediate value
         {
             if (isGCN14 && (insnCode & 0x4000) != 0)
@@ -996,9 +959,9 @@ static const char* sdwaDstUnusedTbl[] =
 };
 
 /* returns mask of abs,neg,sext for src0 and src1 argument and src0 register */
-static inline VOPExtraWordOut decodeVOPSDWAFlags(uint32_t insnCode2, uint16_t arch)
+static inline VOPExtraWordOut decodeVOPSDWAFlags(uint32_t insnCode2, GPUArchMask arch)
 {
-    const bool isGCN14 = (arch & ARCH_RXVEGA)!=0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
     return { uint16_t((insnCode2&0xff) +
         ((!isGCN14 || (insnCode2 & (1U<<23))==0) ? 256 : 0)),
         (insnCode2&(1U<<19))!=0, (insnCode2&(1U<<20))!=0, (insnCode2&(1U<<21))!=0,
@@ -1007,12 +970,12 @@ static inline VOPExtraWordOut decodeVOPSDWAFlags(uint32_t insnCode2, uint16_t ar
 }
 
 // decode and print VOP SDWA encoding
-static void decodeVOPSDWA(FastOutputBuffer& output, uint16_t arch, uint32_t insnCode2,
+static void decodeVOPSDWA(FastOutputBuffer& output, GPUArchMask arch, uint32_t insnCode2,
           bool src0Used, bool src1Used, bool vopc = false)
 {
     char* bufStart = output.reserve(100);
     char* bufPtr = bufStart;
-    const bool isGCN14 = ((arch&ARCH_RXVEGA) != 0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4) != 0);
     cxuint dstSel = 6;
     cxuint dstUnused = 0;
     if (!isGCN14 || !vopc)
@@ -1181,7 +1144,7 @@ static void decodeVOPDPP(FastOutputBuffer& output, uint32_t insnCode2,
 }
 
 void GCNDisasmUtils::decodeVOPCEncoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal,
          FloatLitType displayFloatLits)
 {
@@ -1194,14 +1157,13 @@ void GCNDisasmUtils::decodeVOPCEncoding(GCNDisassembler& dasm, size_t codePos,
     const cxuint src0Field = (insnCode&0x1ff);
     // extra flags are zeroed by default
     VOPExtraWordOut extraFlags = { 0, 0, 0, 0, 0, 0, 0 };
-    if ((arch & ARCH_RXVEGA) != 0 && src0Field==0xf9 && (literal & 0x8000) != 0)
+    if ((arch & ARCH_GCN_1_4) != 0 && src0Field==0xf9 && (literal & 0x8000) != 0)
     {
         // SDWAB replacement of SDST
         output.forward(bufPtr-bufStart);
         bufPtr = bufStart = decodeGCNOperand(dasm, codePos, relocIter,
                             (literal>>8)&0x7f, 2, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
     }
     else // just vcc
         putChars(bufPtr, "vcc, ", 5);
@@ -1236,8 +1198,7 @@ void GCNDisasmUtils::decodeVOPCEncoding(GCNDisassembler& dasm, size_t codePos,
         *bufPtr++ = ')';
     if (extraFlags.sextSrc0)
         *bufPtr++ = ')';
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     
     // apply sext(), negation and abs() if applied
     if (extraFlags.sextSrc1)
@@ -1269,7 +1230,7 @@ void GCNDisasmUtils::decodeVOPCEncoding(GCNDisassembler& dasm, size_t codePos,
 }
 
 void GCNDisasmUtils::decodeVOP1Encoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal,
          FloatLitType displayFloatLits)
 {
@@ -1307,8 +1268,7 @@ void GCNDisasmUtils::decodeVOP1Encoding(GCNDisassembler& dasm, size_t codePos,
             // print DST as normal VGPR
             decodeGCNOperandNoLit(dasm, ((insnCode>>17)&0xff),
                           (gcnInsn.mode&GCN_REG_DST_64)?2:1, bufPtr, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // apply sext, negation and abs if supplied
         if (extraFlags.sextSrc0)
             putChars(bufPtr, "sext(", 5);
@@ -1357,7 +1317,7 @@ void GCNDisasmUtils::decodeVOP1Encoding(GCNDisassembler& dasm, size_t codePos,
 }
 
 void GCNDisasmUtils::decodeVOP2Encoding(GCNDisassembler& dasm, size_t codePos,
-         RelocIter& relocIter, cxuint spacesToAdd, uint16_t arch,
+         RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
          const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal,
          FloatLitType displayFloatLits)
 {
@@ -1367,7 +1327,7 @@ void GCNDisasmUtils::decodeVOP2Encoding(GCNDisassembler& dasm, size_t codePos,
     char* bufPtr = bufStart;
     
     addSpaces(bufPtr, spacesToAdd);
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     
     const cxuint src0Field = (insnCode&0x1ff);
     // extra flags are zeroed by default
@@ -1397,8 +1357,7 @@ void GCNDisasmUtils::decodeVOP2Encoding(GCNDisassembler& dasm, size_t codePos,
     // add VCC if V_ADD_XXX or other instruction VCC as DST
     if (mode1 == GCN_DS2_VCC || mode1 == GCN_DST_VCC)
         putChars(bufPtr, ", vcc", 5);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     // apply sext, negation and abs if supplied
     if (extraFlags.sextSrc0)
         putChars(bufPtr, "sext(", 5);
@@ -1418,14 +1377,12 @@ void GCNDisasmUtils::decodeVOP2Encoding(GCNDisassembler& dasm, size_t codePos,
     if (mode1 == GCN_ARG1_IMM)
     {
         // extra immediate (like V_MADMK_F32)
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         output.forward(bufPtr-bufStart);
         printLiteral(dasm, codePos, relocIter, literal, displayFloatLits, false);
         bufStart = bufPtr = output.reserve(100);
     }
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     // apply sext, negation and abs if supplied
     if (extraFlags.sextSrc1)
         putChars(bufPtr, "sext(", 5);
@@ -1453,8 +1410,7 @@ void GCNDisasmUtils::decodeVOP2Encoding(GCNDisassembler& dasm, size_t codePos,
     if (mode1 == GCN_ARG2_IMM)
     {
         // extra immediate (like V_MADAK_F32)
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         output.forward(bufPtr-bufStart);
         printLiteral(dasm, codePos, relocIter, literal, displayFloatLits, false);
     }
@@ -1492,14 +1448,14 @@ static void decodeVINTRPParam(uint16_t p, char*& bufPtr)
 }
 
 void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-         uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+         GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
          uint32_t insnCode2, FloatLitType displayFloatLits)
 {
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(170);
     char* bufPtr = bufStart;
     const bool isGCN12 = ((arch&ARCH_GCN_1_2_4)!=0);
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     const cxuint opcode = (isGCN12) ? ((insnCode>>16)&0x3ff) : ((insnCode>>17)&0x1ff);
     
     const cxuint vdst = insnCode&0xff;
@@ -1507,7 +1463,7 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
     const cxuint vsrc1 = (insnCode2>>9)&0x1ff;
     const cxuint vsrc2 = (insnCode2>>18)&0x1ff;
     const cxuint sdst = (insnCode>>8)&0x7f;
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     const uint16_t vop3Mode = (gcnInsn.mode&GCN_VOP3_MASK2);
     
     bool vdstUsed = false;
@@ -1544,12 +1500,10 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
              mode1 == GCN_S0EQS12)) /* VOP3b */
         {
             // print SDST operand (VOP3B)
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             decodeGCNOperandNoLit(dasm, ((insnCode>>8)&0x7f), 2, bufPtr, arch);
         }
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         if (vop3Mode != GCN_VOP3_VINTRP)
         {
             // print negation or abs if supplied
@@ -1590,8 +1544,7 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
             
             if ((gcnInsn.mode & GCN_VOP3_MASK3) == GCN_VINTRP_SRC2)
             {
-                *bufPtr++ = ',';
-                *bufPtr++ = ' ';
+                putCommaSpace(bufPtr);
                 // print abs and negation for VSRC2
                 if (negFlags & 4)
                     *bufPtr++ = '-';
@@ -1611,8 +1564,7 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
         }
         else if (mode1 != GCN_SRC12_NONE)
         {
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             // print abs and negation for VSRC1
             if (negFlags & 2)
                 *bufPtr++ = '-';
@@ -1626,8 +1578,7 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
             /* GCN_DST_VCC - only sdst is used, no vsrc2 */
             if (mode1 != GCN_SRC2_NONE && mode1 != GCN_DST_VCC && opcode >= 256)
             {
-                *bufPtr++ = ',';
-                *bufPtr++ = ' ';
+                putCommaSpace(bufPtr);
                 
                 if (mode1 == GCN_DS2_VCC || mode1 == GCN_SRC2_VCC)
                 {
@@ -1885,7 +1836,7 @@ void GCNDisasmUtils::decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAd
 }
 
 void GCNDisasmUtils::decodeVINTRPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-          uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode)
+          GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode)
 {
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(90);
@@ -1893,8 +1844,7 @@ void GCNDisasmUtils::decodeVINTRPEncoding(GCNDisassembler& dasm, cxuint spacesTo
     addSpaces(bufPtr, spacesToAdd);
     // print DST operand
     decodeGCNVRegOperand((insnCode>>18)&0xff, 1, bufPtr);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     if ((gcnInsn.mode & GCN_MASK1) == GCN_P0_P10_P20)
         // print VINTRP param
         decodeVINTRPParam(insnCode&0xff, bufPtr);
@@ -1910,7 +1860,7 @@ void GCNDisasmUtils::decodeVINTRPEncoding(GCNDisassembler& dasm, cxuint spacesTo
 }
 
 void GCNDisasmUtils::decodeDSEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-          uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+          GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
           uint32_t insnCode2)
 {
     FastOutputBuffer& output = dasm.output;
@@ -1944,10 +1894,7 @@ void GCNDisasmUtils::decodeDSEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
     {
         /// print VADDR
         if (vdstUsed)
-        {
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
-        }
+            putCommaSpace(bufPtr);
         decodeGCNVRegOperand(vaddr, 1, bufPtr);
         vaddrUsed = true;
     }
@@ -1959,11 +1906,8 @@ void GCNDisasmUtils::decodeDSEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
     {
         /* print two vdata */
         if (vaddrUsed || vdstUsed)
-        {
             // comma after previous argument (VDST, VADDR)
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
-        }
+            putCommaSpace(bufPtr);
         // determine number of register for VDATA0
         cxuint regsNum = (gcnInsn.mode&GCN_REG_SRC0_64)?2:1;
         if ((gcnInsn.mode&GCN_DS_96) != 0)
@@ -1975,8 +1919,7 @@ void GCNDisasmUtils::decodeDSEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
         vdata0Used = true;
         if (srcMode == GCN_2SRCS)
         {
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             // print VDATA1
             decodeGCNVRegOperand(vdata1, (gcnInsn.mode&GCN_REG_SRC1_64)?2:1, bufPtr);
             vdata1Used = true;
@@ -2051,19 +1994,19 @@ static const char* mtbufNFMTTable[] =
 };
 
 void GCNDisasmUtils::decodeMUBUFEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-          uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+          GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
           uint32_t insnCode2)
 {
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(170);
     char* bufPtr = bufStart;
     const bool isGCN12 = ((arch&ARCH_GCN_1_2_4)!=0);
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     const cxuint vaddr = insnCode2&0xff;
     const cxuint vdata = (insnCode2>>8)&0xff;
     const cxuint srsrc = (insnCode2>>16)&0x1f;
     const cxuint soffset = insnCode2>>24;
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     if (mode1 != GCN_ARG_NONE)
     {
         addSpaces(bufPtr, spacesToAdd);
@@ -2078,8 +2021,7 @@ void GCNDisasmUtils::decodeMUBUFEncoding(GCNDisassembler& dasm, cxuint spacesToA
                 dregsNum++; // tfe
             // print VDATA
             decodeGCNVRegOperand(vdata, dregsNum, bufPtr);
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             // determine number of vaddr registers
             /* for addr32 - idxen+offen or 1, for addr64 - 2 (idxen and offen is illegal) */
             const cxuint aregsNum = ((insnCode & 0x3000U)==0x3000U ||
@@ -2087,13 +2029,11 @@ void GCNDisasmUtils::decodeMUBUFEncoding(GCNDisassembler& dasm, cxuint spacesToA
                     (!isGCN12 && (insnCode & 0x8000U)))? 2 : 1;
             // print VADDR
             decodeGCNVRegOperand(vaddr, aregsNum, bufPtr);
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
         }
         // print SRSRC
         decodeGCNOperandNoLit(dasm, srsrc<<2, 4, bufPtr, arch);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // print SOFFSET
         decodeGCNOperandNoLit(dasm, soffset, 1, bufPtr, arch);
     }
@@ -2183,10 +2123,10 @@ void GCNDisasmUtils::decodeMUBUFEncoding(GCNDisassembler& dasm, cxuint spacesToA
 }
 
 void GCNDisasmUtils::decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-         uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+         GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
          uint32_t insnCode2)
 {
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(170);
     char* bufPtr = bufStart;
@@ -2205,13 +2145,11 @@ void GCNDisasmUtils::decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAd
     
     // print VDATA
     decodeGCNVRegOperand((insnCode2>>8)&0xff, dregsNum, bufPtr);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     // print VADDR
     decodeGCNVRegOperand(insnCode2&0xff,
                  std::max(4, (gcnInsn.mode&GCN_MIMG_VA_MASK)+1), bufPtr);
-    *bufPtr++ = ',';
-    *bufPtr++ = ' ';
+    putCommaSpace(bufPtr);
     // print SRSRC
     decodeGCNOperandNoLit(dasm, ((insnCode2>>14)&0x7c),
                 (((insnCode & 0x8000)!=0) && !isGCN14) ? 4: 8, bufPtr, arch);
@@ -2219,8 +2157,7 @@ void GCNDisasmUtils::decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAd
     const cxuint ssamp = (insnCode2>>21)&0x1f;
     if ((gcnInsn.mode & GCN_MIMG_SAMPLE) != 0)
     {
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // print SSAMP if supplied
         decodeGCNOperandNoLit(dasm, ssamp<<2, 4, bufPtr, arch);
     }
@@ -2256,12 +2193,8 @@ void GCNDisasmUtils::decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAd
     if (insnCode & 0x20000)
         putChars(bufPtr, " lwe", 4);
     if (insnCode & 0x4000)
-    {
-        // DA modifier
-        *bufPtr++ = ' ';
-        *bufPtr++ = 'd';
-        *bufPtr++ = 'a';
-    }
+        putChars(bufPtr, " da", 3);
+    
     if ((arch & ARCH_GCN_1_2_4)!=0 && (insnCode2 & (1U<<31)) != 0)
         putChars(bufPtr, " d16", 4);
     
@@ -2275,7 +2208,7 @@ void GCNDisasmUtils::decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAd
 }
 
 void GCNDisasmUtils::decodeEXPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-            uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+            GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
             uint32_t insnCode2)
 {
     FastOutputBuffer& output = dasm.output;
@@ -2323,8 +2256,7 @@ void GCNDisasmUtils::decodeEXPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd
     cxuint vsrcsUsed = 0;
     for (cxuint i = 0; i < 4; i++)
     {
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         if (insnCode & (1U<<i))
         {
             if ((insnCode&0x400)==0)
@@ -2349,12 +2281,7 @@ void GCNDisasmUtils::decodeEXPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd
     if (insnCode&0x400)
         putChars(bufPtr, " compr", 6);
     if (insnCode&0x1000)
-    {
-        // VM modifier
-        *bufPtr++ = ' ';
-        *bufPtr++ = 'v';
-        *bufPtr++ = 'm';
-    }
+        putChars(bufPtr, " vm", 3);
     
     // print value, if some are not used, but values is not default
     for (cxuint i = 0; i < 4; i++)
@@ -2390,10 +2317,10 @@ void GCNDisasmUtils::printFLATAddr(cxuint flatMode, char*& bufPtr, uint32_t insn
 }
 
 void GCNDisasmUtils::decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-            uint16_t arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+            GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
             uint32_t insnCode2)
 {
-    const bool isGCN14 = ((arch&ARCH_RXVEGA)!=0);
+    const bool isGCN14 = ((arch&ARCH_GCN_1_4)!=0);
     FastOutputBuffer& output = dasm.output;
     char* bufStart = output.reserve(150);
     char* bufPtr = bufStart;
@@ -2414,8 +2341,7 @@ void GCNDisasmUtils::decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAd
         vdstUsed = true;
         // print VDST
         decodeGCNVRegOperand(insnCode2>>24, dstRegsNum, bufPtr);
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         printFLATAddr(flatMode, bufPtr, insnCode2);
         printAddr = true;
     }
@@ -2427,8 +2353,7 @@ void GCNDisasmUtils::decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAd
         if ((gcnInsn.mode & GCN_FLAT_NODST) == 0)
         {
             vdstUsed = true;
-            *bufPtr++ = ',';
-            *bufPtr++ = ' ';
+            putCommaSpace(bufPtr);
             // print VDST
             decodeGCNVRegOperand(insnCode2>>24, dstRegsNum, bufPtr);
         }
@@ -2437,8 +2362,7 @@ void GCNDisasmUtils::decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAd
     if ((gcnInsn.mode & GCN_FLAT_NODATA) == 0) /* print data */
     {
         vdataUsed = true;
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         // print DATA field
         decodeGCNVRegOperand((insnCode2>>8)&0xff, dregsNum, bufPtr);
     }
@@ -2446,8 +2370,7 @@ void GCNDisasmUtils::decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAd
     if (flatMode != 0 && printAddr)
     {
         // if GLOBAL_ or SCRATCH_
-        *bufPtr++ = ',';
-        *bufPtr++ = ' ';
+        putCommaSpace(bufPtr);
         cxuint saddr = (insnCode2>>16)&0x7f;
         if ((saddr&0x7f) != 0x7f)
             // print SADDR (GCN 1.4)

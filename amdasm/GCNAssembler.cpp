@@ -26,6 +26,8 @@
 #include <mutex>
 #include <CLRX/amdasm/Assembler.h>
 #include <CLRX/utils/Utilities.h>
+#include <CLRX/utils/GPUId.h>
+#include <CLRX/amdasm/GCNDefs.h>
 #include "GCNAsmInternals.h"
 
 using namespace CLRX;
@@ -119,193 +121,14 @@ static void initializeGCNAssembler()
 
 // GCN Usage handler
 
-GCNUsageHandler::GCNUsageHandler(const std::vector<cxbyte>& content,
-                 uint16_t _archMask) : ISAUsageHandler(content), archMask(_archMask)
-{
-    defaultInstrSize = 4;
-}
+GCNUsageHandler::GCNUsageHandler() : ISAUsageHandler()
+{ }
 GCNUsageHandler::~GCNUsageHandler()
 { }
 
 ISAUsageHandler* GCNUsageHandler::copy() const
 {
     return new GCNUsageHandler(*this);
-}
-
-// get read-write flags from current position
-cxbyte GCNUsageHandler::getRwFlags(AsmRegField regField,
-                   uint16_t rstart, uint16_t rend) const
-{
-    uint16_t regSize = rend-rstart-1;
-    cxbyte flags;
-    switch (regField)
-    {
-        case GCNFIELD_SMRD_SBASE:
-            flags = (regSize>>1)<<ASMRVU_REGSIZE_SHIFT;
-            break;
-        case GCNFIELD_SMRD_SDST:
-        {
-            cxbyte out = 0;
-            regSize += 1;
-            for (uint16_t v = 1; v < regSize; v<<=1, out++);
-            flags = out<<ASMRVU_REGSIZE_SHIFT;
-            break;
-        }
-        case GCNFIELD_M_SRSRC:
-        case GCNFIELD_MIMG_SSAMP:
-            flags = (regSize>>2)<<ASMRVU_REGSIZE_SHIFT; // 4
-            break;
-        default:
-            flags = regSize<<ASMRVU_REGSIZE_SHIFT;
-            break;
-    }
-    return flags;
-}
-
-/* get register pair from specified field from instruction in current code position */
-std::pair<uint16_t,uint16_t> GCNUsageHandler::getRegPair(AsmRegField regField,
-                 cxbyte rwFlags) const
-{
-    cxbyte regSize = ((rwFlags >> ASMRVU_REGSIZE_SHIFT) & 15) + 1;
-    uint16_t rstart;
-    uint32_t code1 = 0, code2 = 0;
-    if (readOffset+4 <= content.size())
-        code1 = ULEV(*reinterpret_cast<const uint32_t*>(content.data()+readOffset));
-    if (readOffset+8 <= content.size())
-        code2 = ULEV(*reinterpret_cast<const uint32_t*>(content.data()+readOffset+4));
-    
-    const bool isGCN12 = (archMask & ARCH_GCN_1_2_4)!=0;
-    
-    switch(regField)
-    {
-        case GCNFIELD_SSRC0:
-            rstart = code1&0xff;
-            break;
-        case GCNFIELD_SSRC1:
-            rstart = (code1>>8)&0xff;
-            break;
-        case GCNFIELD_SDST:
-            rstart = (code1>>16)&0x7f;
-            break;
-        case GCNFIELD_SMRD_SBASE:
-            if (isGCN12)
-                rstart = (code1<<1) & 0x7f;
-            else
-                rstart = (code1>>8) & 0x7e;
-            regSize<<=1; // 2 or 4
-            break;
-        case GCNFIELD_SMRD_SDST:
-        case GCNFIELD_SMRD_SDSTH:
-            if (isGCN12)
-                rstart = (code1>>6) & 0x7f;
-            else
-                rstart = (code1>>15) & 0x7f;
-            regSize = 1U<<(regSize-1);
-            if (regField == GCNFIELD_SMRD_SDSTH)
-                rstart += regSize;
-            break;
-        case GCNFIELD_SMRD_SOFFSET:
-            if (isGCN12)
-                rstart = (code2&0x7f);
-            else
-                rstart = (code1&0x7f);
-            break;
-        case GCNFIELD_VOP_SRC0:
-            rstart = code1&0x1ff;
-            break;
-        case GCNFIELD_VOP_VSRC1:
-            rstart = ((code1>>9) & 0xff) + 256;
-            break;
-        case GCNFIELD_VOP_SSRC1:
-            rstart = ((code1>>9) & 0xff);
-            break;
-        case GCNFIELD_VOP_VDST:
-            rstart = ((code1>>17) & 0xff) + 256;
-            break;
-        case GCNFIELD_VOP_SDST:
-            rstart = ((code1>>17) & 0xff);
-            break;
-        case GCNFIELD_VOP3_SRC0:
-            rstart = code2&0x1ff;
-            break;
-        case GCNFIELD_VOP3_SRC1:
-            rstart = (code2>>9) & 0x1ff;
-            break;
-        case GCNFIELD_VOP3_SRC2:
-            rstart = (code2>>18) & 0x1ff;
-            break;
-        case GCNFIELD_VOP3_VDST:
-        case GCNFIELD_VINTRP_VSRC0:
-            rstart = (code1&0xff) + 256;
-            break;
-        case GCNFIELD_VOP3_SDST0:
-            rstart = (code1&0xff);
-            break;
-        case GCNFIELD_VOP3_SSRC:
-            rstart = (code2>>18)&0xff;
-            break;
-        case GCNFIELD_VOP3_SDST1:
-            rstart = (code1>>8)&0xff;
-            break;
-        case GCNFIELD_VINTRP_VDST:
-            rstart = ((code1>>18) & 0xff) + 256;
-            break;
-        case GCNFIELD_DPPSDWA_SRC0:
-        case GCNFIELD_FLAT_ADDR:
-        case GCNFIELD_DS_ADDR:
-        case GCNFIELD_EXP_VSRC0:
-        case GCNFIELD_M_VADDR:
-            rstart = (code2&0xff) + 256;
-            break;
-        case GCNFIELD_FLAT_DATA:
-        case GCNFIELD_DS_DATA0:
-        case GCNFIELD_EXP_VSRC1:
-        case GCNFIELD_M_VDATA:
-            rstart = ((code2>>8)&0xff) + 256;
-            break;
-        case GCNFIELD_M_VDATAH:
-            rstart = ((code2>>8)&0xff) + 256 + regSize;
-            break;
-        case GCNFIELD_M_VDATALAST:
-            // regSize stored by fix for regusage (regvar==nullptr)
-            rstart = ((code2>>8)&0xff) + 256 + regSize;
-            return { rstart, rstart+1 };
-            break;
-        case GCNFIELD_DS_DATA1:
-        case GCNFIELD_EXP_VSRC2:
-            rstart = ((code2>>16)&0xff) + 256;
-            break;
-        case GCNFIELD_DS_VDST:
-        case GCNFIELD_FLAT_VDST:
-        case GCNFIELD_EXP_VSRC3:
-            rstart = (code2>>24) + 256;
-            break;
-        case GCNFIELD_FLAT_VDSTLAST:
-            // regSize stored by fix for regusage (regvar==nullptr)
-            rstart = (code2>>24) + 256 + regSize;
-            return { rstart, rstart+1 };
-            break;
-        case GCNFIELD_M_SRSRC:
-            rstart = (code2>>14)&0x7c;
-            regSize<<=2; // 4 or 8
-            break;
-        case GCNFIELD_MIMG_SSAMP:
-            rstart = (code2>>19)&0x7c;
-            regSize<<=2; // 4
-            break;
-        case GCNFIELD_M_SOFFSET:
-            rstart = (code2>>24)&0xff;
-            break;
-        case GCNFIELD_DPPSDWA_SSRC0:
-            rstart = code2&0xff;
-            break;
-        case GCNFIELD_SDWAB_SDST:
-            rstart = (code2>>8)&0x7f;
-            break;
-        default:
-            throw AsmException("Unknown GCNField");
-    }
-    return { rstart, rstart+regSize };
 }
 
 /// get usage dependencies
@@ -339,20 +162,29 @@ GCNAssembler::GCNAssembler(Assembler& assembler): ISAAssembler(assembler),
                     getGPUArchitectureFromDeviceType(assembler.getDeviceType())))
 {
     callOnce(clrxGCNAssemblerOnceFlag, initializeGCNAssembler);
+    std::fill(instrRVUs, instrRVUs + sizeof(instrRVUs)/sizeof(AsmRegVarUsage),
+            AsmRegVarUsage{});
 }
 
 GCNAssembler::~GCNAssembler()
 { }
 
-
-ISAUsageHandler* GCNAssembler::createUsageHandler(std::vector<cxbyte>& content) const
+void GCNAssembler::setRegVarUsage(const AsmRegVarUsage& rvu)
 {
-    return new GCNUsageHandler(content, curArchMask);
+    const cxuint maxSGPRsNum = getGPUMaxRegsNumByArchMask(curArchMask, REGTYPE_SGPR);
+    if (rvu.regVar != nullptr || rvu.rstart < maxSGPRsNum || rvu.rstart >= 256 ||
+        isSpecialSGPRRegister(curArchMask, rvu.rstart))
+        instrRVUs[currentRVUIndex] = rvu;
+}
+
+ISAUsageHandler* GCNAssembler::createUsageHandler() const
+{
+    return new GCNUsageHandler();
 }
 
 void GCNAssembler::assemble(const CString& inMnemonic, const char* mnemPlace,
             const char* linePtr, const char* lineEnd, std::vector<cxbyte>& output,
-            ISAUsageHandler* usageHandler)
+            ISAUsageHandler* usageHandler, ISAWaitHandler* waitHandler)
 {
     CString mnemonic;
     size_t inMnemLen = inMnemonic.size();
@@ -405,6 +237,7 @@ void GCNAssembler::assemble(const CString& inMnemonic, const char* mnemPlace,
     }
     
     resetInstrRVUs();
+    resetWaitInstrs();
     setCurrentRVU(0);
     /* decode instruction line */
     bool good = false;
@@ -485,7 +318,10 @@ void GCNAssembler::assemble(const CString& inMnemonic, const char* mnemPlace,
     }
     // register RegVarUsage in tests, do not apply normal usage
     if (good && (assembler.getFlags() & ASM_TESTRUN) != 0)
+    {
         flushInstrRVUs(usageHandler);
+        flushWaitInstrs(waitHandler);
+    }
 }
 
 #define GCN_FAIL_BY_ERROR(PLACE, STRING) \
@@ -534,7 +370,7 @@ bool GCNAssembler::resolveCode(const AsmSourcePos& sourcePos, cxuint targetSecti
                     insnCode==0xbf82U ? AsmCodeFlowType::JUMP :
                     // CALL from S_CALL_B64
                     (((insnCode&0xff80)==0xba80 &&
-                            (curArchMask&ARCH_RXVEGA)!=0) ? AsmCodeFlowType::CALL :
+                            (curArchMask&ARCH_GCN_1_4)!=0) ? AsmCodeFlowType::CALL :
                                 AsmCodeFlowType::CJUMP) });
             return true;
         }
@@ -674,7 +510,7 @@ void GCNAssembler::getMaxRegistersNum(size_t& regTypesNum, cxuint* maxRegs) cons
 void GCNAssembler::getRegisterRanges(size_t& regTypesNum, cxuint* regRanges) const
 {
     regRanges[0] = 0;
-    regRanges[1] = getGPUMaxRegsNumByArchMask(curArchMask, 0);
+    regRanges[1] = 108; // to extra SGPR register number
     regRanges[2] = 256; // vgpr
     regRanges[3] = 256+getGPUMaxRegsNumByArchMask(curArchMask, 1);
     regTypesNum = 2;
@@ -700,7 +536,8 @@ bool GCNAssembler::parseRegisterRange(const char*& linePtr, cxuint& regStart,
     GCNOperand operand;
     regVar = nullptr;
     if (!GCNAsmUtils::parseOperand(assembler, linePtr, operand, nullptr, curArchMask, 0,
-                INSTROP_SREGS|INSTROP_VREGS|INSTROP_SSOURCE|INSTROP_UNALIGNED,
+                INSTROP_SREGS|INSTROP_VREGS|INSTROP_SSOURCE|INSTROP_UNALIGNED|
+                INSTROP_ONLYINLINECONSTS,
                 ASMFIELD_NONE))
         return false;
     regStart = operand.range.start;
@@ -863,4 +700,62 @@ size_t GCNAssembler::getInstructionSize(size_t codeSize, const cxbyte* code) con
         }
     }
     return words<<2;
+}
+
+// for GCN 1.0
+static const AsmWaitConfig gcnWaitConfig10 =
+{
+    cxuint(GCNDELOP_MAX+1),
+    cxuint(GCNWAIT_MAX+1),
+    {
+        { GCNWAIT_VMCNT, true, false, 255 },  // GCNDELOP_VMOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_LDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_GDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_SENDMSG
+        { GCNWAIT_LGKMCNT, false, false, 4 },  // GCNDELOP_SMOP
+        { GCNWAIT_EXPCNT, true, true, 255 },  // GCNDELOP_EXPVMWRITE
+        { GCNWAIT_EXPCNT, false, false, 255 }  // GCNDELOP_EXPORT
+    },
+    { 16, 8, 8 }
+};
+
+
+static const AsmWaitConfig gcnWaitConfig =
+{
+    cxuint(GCNDELOP_MAX+1),
+    cxuint(GCNWAIT_MAX+1),
+    {
+        { GCNWAIT_VMCNT, true, false, 255 },  // GCNDELOP_VMOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_LDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_GDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_SENDMSG
+        { GCNWAIT_LGKMCNT, false, false, 4 },  // GCNDELOP_SMOP
+        { GCNWAIT_EXPCNT, true, true, 255 },  // GCNDELOP_EXPVMWRITE
+        { GCNWAIT_EXPCNT, false, true, 255 }  // GCNDELOP_EXPORT
+    },
+    { 16, 16, 8 }
+};
+
+// for RX VEGA
+static const AsmWaitConfig gcnWaitConfig14 =
+{
+    cxuint(GCNDELOP_MAX+1),
+    cxuint(GCNWAIT_MAX+1),
+    {
+        { GCNWAIT_VMCNT, true, false, 255 },  // GCNDELOP_VMOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_LDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_GDSOP
+        { GCNWAIT_LGKMCNT, true, false, 255 },  // GCNDELOP_SENDMSG
+        { GCNWAIT_LGKMCNT, false, false, 4 },  // GCNDELOP_SMOP
+        { GCNWAIT_EXPCNT, true, true, 255 },  // GCNDELOP_EXPVMWRITE
+        { GCNWAIT_EXPCNT, false, true, 255 }  // GCNDELOP_EXPORT
+    },
+    { 64, 16, 8 }
+};
+
+const AsmWaitConfig& GCNAssembler::getWaitConfig() const
+{
+    if ((curArchMask&ARCH_HD7X00)!=0)
+        return gcnWaitConfig10;
+    return (curArchMask&ARCH_GCN_1_4)!=0 ? gcnWaitConfig14 : gcnWaitConfig;
 }

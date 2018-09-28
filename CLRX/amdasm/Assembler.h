@@ -24,6 +24,7 @@
 #define __CLRX_ASSEMBLER_H__
 
 #include <CLRX/Config.h>
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <istream>
@@ -37,6 +38,8 @@
 #include <unordered_map>
 #include <CLRX/utils/Utilities.h>
 #include <CLRX/utils/Containers.h>
+#include <CLRX/utils/DTree.h>
+#include <CLRX/utils/GPUId.h>
 #include <CLRX/amdasm/Commons.h>
 #include <CLRX/amdasm/AsmSource.h>
 #include <CLRX/amdasm/AsmFormats.h>
@@ -74,63 +77,33 @@ public:
     /// stgructure that hold read position to store later
     struct ReadPos
     {
-        size_t readOffset;  ///< read offset
-        size_t instrStructPos;  ///< position instrStructs
-        size_t regVarUsagesPos;    ///< position in regVarUsage
-        uint16_t pushedArgs;    ///< pushed argds number
-        cxbyte argPos;          ///< argument position
-        cxbyte argFlags;        ///< ???
-        bool isNext;            ///< isNext
-        bool useRegMode;        ///< true if in usereg mode
+        size_t chunkPos;
+        size_t itemPos;
     };
     
-    /// regvar usage (internal)
+protected:
     struct RegVarUsageInt
     {
         const AsmRegVar* regVar;    ///< if null, then usage of called register
         uint16_t rstart;    ///< register start
         uint16_t rend;      ///< register end
         AsmRegField regField;   ///< place in instruction
-        cxbyte rwFlags;  ///< 1 - read, 2 - write
-        cxbyte align;   ///< register alignment
-    };
-
-    /// internal structure for regusage
-    struct RegUsageInt
-    {
-        AsmRegField regField;   ///< place in instruction
-        cxbyte rwFlags;     ///< 1 - read, 2 - write, other flags
-    };
-
-    /// internal structure for regusage
-    struct RegUsage2Int
-    {
-        uint16_t rstart;    ///< register start
-        uint16_t rend;      ///< register end
-        cxbyte rwFlags;     ///< rw flags and others
+        cxbyte rwFlags:2;  ///< 1 - read, 2 - write
+        cxbyte align:5;   ///< register alignment
+        cxbyte useRegMode:1; // usereg mode
+        uint16_t offsetLo;
     };
     
-protected:
-    std::vector<cxbyte> instrStruct;    ///< structure of register usage
-    std::vector<cxbyte> regVarUsages;  ///< register usage data
-    const std::vector<cxbyte>& content; ///< code content
-    size_t lastOffset;  ///< last offset
-    size_t readOffset;  ///< read offset
-    size_t instrStructPos;  ///< position in instr struct
-    size_t regVarUsagesPos; ///< position in regvar usage
-    uint16_t pushedArgs;    ///< pushed args
-    cxbyte argPos;      ///< argument position
-    cxbyte argFlags;    ///< ???
-    cxbyte defaultInstrSize;    ///< default instruction size
-    bool isNext;        ///< is next
-    bool useRegMode;    ///< true if in usereg mode
+    struct Chunk
+    {
+        size_t offsetFirst;
+        std::vector<RegVarUsageInt> items;
+    };
     
-    void skipBytesInInstrStruct();
-    /// put space to offset
-    void putSpace(size_t offset);
+    std::vector<Chunk> chunks;
     
     /// constructor
-    explicit ISAUsageHandler(const std::vector<cxbyte>& content);
+    explicit ISAUsageHandler();
 public:
     /// destructor
     virtual ~ISAUsageHandler();
@@ -139,44 +112,15 @@ public:
     
     /// push regvar or register usage
     void pushUsage(const AsmRegVarUsage& rvu);
-    /// rewind to start for reading
-    void rewind();
-    /// flush last pending register usages
-    void flush();
     /// has next regvar usage
-    bool hasNext() const
-    { return isNext; }
+    bool hasNext(const ReadPos& readPos) const
+    { return readPos.chunkPos < chunks.size() && (readPos.chunkPos+1 != chunks.size() ||
+        readPos.itemPos < chunks.back().items.size());; }
     /// get next usage
-    AsmRegVarUsage nextUsage();
+    AsmRegVarUsage nextUsage(ReadPos& readPos);
+    // find position by offset
+    ReadPos findPositionByOffset(size_t offset) const;
     
-    /// get reading position
-    ReadPos getReadPos() const
-    {
-        return { readOffset, instrStructPos, regVarUsagesPos, pushedArgs,
-                argPos, argFlags, isNext, useRegMode };
-    }
-    /// set reading position
-    void setReadPos(const ReadPos rpos)
-    {
-        readOffset = rpos.readOffset;
-        instrStructPos = rpos.instrStructPos;
-        regVarUsagesPos = rpos.regVarUsagesPos;
-        pushedArgs = rpos.pushedArgs;
-        argPos = rpos.argPos;
-        argFlags = rpos.argFlags;
-        isNext = rpos.isNext;
-        useRegMode = rpos.useRegMode;
-    }
-    
-    /// push regvar or register from usereg pseudo-op
-    void pushUseRegUsage(const AsmRegVarUsage& rvu);
-    
-    /// get RW flags (used by assembler)
-    virtual cxbyte getRwFlags(AsmRegField regField, uint16_t rstart,
-                      uint16_t rend) const = 0;
-    /// get reg pair (used by assembler)
-    virtual std::pair<uint16_t,uint16_t> getRegPair(AsmRegField regField,
-                    cxbyte rwFlags) const = 0;
     /// get usage dependencies around single instruction
     virtual void getUsageDependencies(cxuint rvusNum, const AsmRegVarUsage* rvus,
                     cxbyte* linearDeps) const = 0;
@@ -187,26 +131,21 @@ class ISALinearDepHandler
 {
 private:
     std::vector<AsmRegVarLinearDep> regVarLinDeps;
-    size_t regVarLinDepsPos;
 public:
     /// constructor
     ISALinearDepHandler();
     
-    /// get reading position
-    size_t getReadPos() const
-    { return regVarLinDepsPos; }
-    /// get reading position
-    void setReadPos(size_t pos)
-    { regVarLinDepsPos = pos; }
     /// push linear dependency
-    void pushLinearDep(const AsmRegVarLinearDep& linearDep);
-    /// rewind read position to start
-    void rewind();
+    void pushLinearDep(const AsmRegVarLinearDep& linearDep)
+    { regVarLinDeps.push_back(linearDep); }
     /// return true if has next
-    bool hasNext() const
-    { return regVarLinDepsPos < regVarLinDeps.size(); }
+    size_t size() const
+    { return regVarLinDeps.size(); }
     /// get next linear dependency
-    AsmRegVarLinearDep nextLinearDep();
+    AsmRegVarLinearDep getLinearDep(size_t pos) const
+    { return regVarLinDeps[pos]; }
+    /// find position by offset
+    size_t findPositionByOffset(size_t offset) const;
     /// copy linear handler (make new copy)
     ISALinearDepHandler* copy() const;
 };
@@ -214,21 +153,57 @@ public:
 /// GCN (register and regvar) Usage handler
 class GCNUsageHandler: public ISAUsageHandler
 {
-private:
-    uint16_t archMask;
 public:
     /// constructor
-    GCNUsageHandler(const std::vector<cxbyte>& content, uint16_t archMask);
+    GCNUsageHandler();
     /// destructor
     ~GCNUsageHandler();
     
     /// copy this usage handler
     ISAUsageHandler* copy() const;
     
-    cxbyte getRwFlags(AsmRegField regFied, uint16_t rstart, uint16_t rend) const;
-    std::pair<uint16_t,uint16_t> getRegPair(AsmRegField regField, cxbyte rwFlags) const;
     void getUsageDependencies(cxuint rvusNum, const AsmRegVarUsage* rvus,
                     cxbyte* linearDeps) const;
+};
+
+/// wait handler
+/** wait handler that collect wait instructions and delayed operations.
+ * an delayed operations are registered per instruction if they have same offset.
+ * field 'count' determine number of operations per instructions.
+ * If two or more delayed ops for instruction present and they delayed ops have this same
+ * type then they will be treated as single delayed op.
+ */
+class ISAWaitHandler
+{
+public:
+    struct ReadPos
+    {
+        size_t delOpPos;
+        size_t waitInstrPos;
+    };
+private:
+    std::vector<AsmDelayedOp> delayedOps;
+    std::vector<AsmWaitInstr> waitInstrs;
+public:
+    /// constructor
+    ISAWaitHandler();
+    
+    /// push delayed result
+    void pushDelayedOp(const AsmDelayedOp& delOp)
+    { delayedOps.push_back(delOp); }
+    /// wait instruction
+    void pushWaitInstr(const AsmWaitInstr& waitInstr)
+    { waitInstrs.push_back(waitInstr); }
+    /// return true if has next instruction
+    bool hasNext(const ReadPos& readPos) const
+    { return readPos.delOpPos < delayedOps.size() ||
+                readPos.waitInstrPos < waitInstrs.size(); }
+    /// get next instruction, return true if waitInstr
+    bool nextInstr(ReadPos& readPos, AsmDelayedOp& delOp, AsmWaitInstr& waitInstr);
+    /// find position by offset
+    ReadPos findPositionByOffset(size_t offset) const;
+    /// copy wait handler (make new copy)
+    ISAWaitHandler* copy() const;
 };
 
 /// ISA assembler class
@@ -248,23 +223,23 @@ protected:
     /// print warning about integer out of range
     void printWarningForRange(cxuint bits, uint64_t value, const AsmSourcePos& pos,
                 cxbyte signess = WS_BOTH);
-    void addCodeFlowEntry(cxuint sectionId, const AsmCodeFlowEntry& entry);
+    void addCodeFlowEntry(AsmSectionId sectionId, const AsmCodeFlowEntry& entry);
     /// constructor
     explicit ISAAssembler(Assembler& assembler);
 public:
     /// destructor
     virtual ~ISAAssembler();
     /// create usage handler
-    virtual ISAUsageHandler* createUsageHandler(std::vector<cxbyte>& content) const = 0;
+    virtual ISAUsageHandler* createUsageHandler() const = 0;
     
     /// assemble single line
     virtual void assemble(const CString& mnemonic, const char* mnemPlace,
               const char* linePtr, const char* lineEnd, std::vector<cxbyte>& output,
-              ISAUsageHandler* usageHandler) = 0;
+              ISAUsageHandler* usageHandler, ISAWaitHandler* waitHandler) = 0;
     /// resolve code with location, target and value
-    virtual bool resolveCode(const AsmSourcePos& sourcePos, cxuint targetSectionId,
+    virtual bool resolveCode(const AsmSourcePos& sourcePos, AsmSectionId targetSectionId,
                  cxbyte* sectionData, size_t offset, AsmExprTargetType targetType,
-                 cxuint sectionId, uint64_t value) = 0;
+                 AsmSectionId sectionId, uint64_t value) = 0;
     /// check if name is mnemonic
     virtual bool checkMnemonic(const CString& mnemonic) const = 0;
     /// set allocated registers (if regs is null then reset them)
@@ -289,6 +264,7 @@ public:
                        const char* end, cxuint& type) = 0;
     /// get size of instruction
     virtual size_t getInstructionSize(size_t codeSize, const cxbyte* code) const = 0;
+    virtual const AsmWaitConfig& getWaitConfig() const = 0;
 };
 
 /// GCN arch assembler
@@ -307,20 +283,32 @@ private:
         Regs regs;
         cxuint regTable[2];
     };
-    uint16_t curArchMask;
+    GPUArchMask curArchMask;
     cxbyte currentRVUIndex;
     AsmRegVarUsage instrRVUs[6];
+    bool hasWaitInstr;
+    AsmWaitInstr waitInstr;
+    AsmDelayedOp delayedOps[6];
     
     void resetInstrRVUs()
     {
         for (AsmRegVarUsage& rvu: instrRVUs)
+        {
+            rvu.useRegMode = false;
             rvu.regField = ASMFIELD_NONE;
+        }
     }
+    void resetWaitInstrs()
+    {
+        hasWaitInstr = false;
+        for (AsmDelayedOp& op: delayedOps)
+            op.delayedOpType = op.delayedOpType2 = ASMDELOP_NONE;
+    }
+    
     void setCurrentRVU(cxbyte idx)
     { currentRVUIndex = idx; }
     
-    void setRegVarUsage(const AsmRegVarUsage& rvu)
-    { instrRVUs[currentRVUIndex] = rvu; }
+    void setRegVarUsage(const AsmRegVarUsage& rvu);
     
     void flushInstrRVUs(ISAUsageHandler* usageHandler)
     {
@@ -328,20 +316,30 @@ private:
             if (rvu.regField != ASMFIELD_NONE)
                 usageHandler->pushUsage(rvu);
     }
+    void flushWaitInstrs(ISAWaitHandler* waitHandler)
+    {
+        for (const AsmDelayedOp& op: delayedOps)
+            if (op.delayedOpType != ASMDELOP_NONE)
+                waitHandler->pushDelayedOp(op);
+        
+        if (hasWaitInstr)
+            waitHandler->pushWaitInstr(waitInstr);
+    }
+
 public:
     /// constructor
     explicit GCNAssembler(Assembler& assembler);
     /// destructor
     ~GCNAssembler();
     
-    ISAUsageHandler* createUsageHandler(std::vector<cxbyte>& content) const;
+    ISAUsageHandler* createUsageHandler() const;
     
     void assemble(const CString& mnemonic, const char* mnemPlace, const char* linePtr,
                   const char* lineEnd, std::vector<cxbyte>& output,
-                  ISAUsageHandler* usageHandler);
-    bool resolveCode(const AsmSourcePos& sourcePos, cxuint targetSectionId,
+                  ISAUsageHandler* usageHandler, ISAWaitHandler* waitHandler);
+    bool resolveCode(const AsmSourcePos& sourcePos, AsmSectionId targetSectionId,
                  cxbyte* sectionData, size_t offset, AsmExprTargetType targetType,
-                 cxuint sectionId, uint64_t value);
+                 AsmSectionId sectionId, uint64_t value);
     bool checkMnemonic(const CString& mnemonic) const;
     void setAllocatedRegisters(const cxuint* regs, Flags regFlags);
     const cxuint* getAllocatedRegisters(size_t& regTypesNum, Flags& regFlags) const;
@@ -353,6 +351,7 @@ public:
     bool relocationIsFit(cxuint bits, AsmExprTargetType tgtType);
     bool parseRegisterType(const char*& linePtr, const char* end, cxuint& type);
     size_t getInstructionSize(size_t codeSize, const cxbyte* code) const;
+    const AsmWaitConfig& getWaitConfig() const;
 };
 
 class AsmRegAllocator
@@ -396,7 +395,6 @@ public:
         // key - regvar, value - SSA info for this regvar
         Array<std::pair<AsmSingleVReg, SSAInfo> > ssaInfoMap;
         ISAUsageHandler::ReadPos usagePos;
-        size_t linearDepPos;
     };
     
     typedef Array<std::pair<size_t, size_t> > OutLiveness;
@@ -405,7 +403,7 @@ public:
     typedef std::pair<size_t, size_t> SSAReplace;
     typedef std::unordered_map<AsmSingleVReg, VectorSet<SSAReplace> > SSAReplacesMap;
     // interference graph type
-    typedef Array<std::unordered_set<size_t> > InterGraph;
+    typedef Array<DTreeSet<size_t> > InterGraph;
     typedef std::unordered_map<AsmSingleVReg, std::vector<size_t> > VarIndexMap;
     struct LinearDep
     {
@@ -416,7 +414,7 @@ public:
     
     struct VIdxSetEntry
     {
-        std::unordered_set<size_t> vs[MAX_REGTYPES_NUM];
+        DTree<size_t> vs[MAX_REGTYPES_NUM];
     };
 private:
     Assembler& assembler;
@@ -451,7 +449,7 @@ public:
     void createInterferenceGraph();
     void colorInterferenceGraph();
     
-    void allocateRegisters(cxuint sectionId);
+    void allocateRegisters(AsmSectionId sectionId);
     
     const std::vector<CodeBlock>& getCodeBlocks() const
     { return codeBlocks; }
@@ -470,6 +468,29 @@ public:
     { return vidxRoutineMap; }
     const std::unordered_map<size_t, VIdxSetEntry>& getVIdxCallMap() const
     { return vidxCallMap; }
+};
+
+/// Assembler Wait scheduler
+class AsmWaitScheduler
+{
+private:
+    const AsmWaitConfig& waitConfig;
+    Assembler& assembler;
+    const std::vector<AsmRegAllocator::CodeBlock>& codeBlocks;
+    const AsmRegAllocator::VarIndexMap* vregIndexMaps;
+    const Array<cxuint>* graphColorMaps;
+    bool onlyWarnings;
+    std::vector<AsmWaitInstr> neededWaitInstrs;
+public:
+    AsmWaitScheduler(const AsmWaitConfig& asmWaitConfig, Assembler& assembler,
+            const std::vector<AsmRegAllocator::CodeBlock>& codeBlocks,
+            const AsmRegAllocator::VarIndexMap* vregIndexMaps,
+            const Array<cxuint>* graphColorMaps, bool onlyWarnings);
+    
+    void schedule(ISAUsageHandler& usageHandler, ISAWaitHandler& waitHandler);
+    
+    const std::vector<AsmWaitInstr>& getNeededWaitInstrs() const
+    { return neededWaitInstrs; }
 };
 
 /// type of clause
@@ -498,13 +519,14 @@ public:
     /// defined symbol entry
     typedef std::pair<CString, uint64_t> DefSym;
     /// kernel map type
-    typedef std::unordered_map<CString, cxuint> KernelMap;
+    typedef std::unordered_map<CString, AsmKernelId> KernelMap;
 private:
     friend class AsmStreamInputFilter;
     friend class AsmMacroInputFilter;
     friend class AsmForInputFilter;
     friend class AsmExpression;
     friend class AsmFormatHandler;
+    friend class AsmKcodeHandler;
     friend class AsmRawCodeHandler;
     friend class AsmAmdHandler;
     friend class AsmAmdCL2Handler;
@@ -512,9 +534,11 @@ private:
     friend class AsmROCmHandler;
     friend class ISAAssembler;
     friend class AsmRegAllocator;
+    friend class AsmWaitScheduler;
     
     friend struct AsmParseUtils; // INTERNAL LOGIC
     friend struct AsmPseudoOps; // INTERNAL LOGIC
+    friend struct AsmKcodePseudoOps; // INTERNAL LOGIC
     friend struct AsmGalliumPseudoOps; // INTERNAL LOGIC
     friend struct AsmAmdPseudoOps; // INTERNAL LOGIC
     friend struct AsmAmdCL2PseudoOps; // INTERNAL LOGIC
@@ -536,7 +560,7 @@ private:
     std::vector<DefSym> defSyms;
     std::vector<CString> includeDirs;
     std::vector<AsmSection> sections;
-    std::vector<Array<cxuint> > relSpacesSections;
+    std::vector<Array<AsmSectionId> > relSpacesSections;
     std::unordered_set<AsmSymbolEntry*> symbolSnapshots;
     std::unordered_set<AsmSymbolEntry*> symbolClones;
     std::vector<AsmExpression*> unevalExpressions;
@@ -579,8 +603,8 @@ private:
     
     std::stack<AsmClause> clauses;
     
-    cxuint currentKernel;
-    cxuint& currentSection;
+    AsmKernelId currentKernel;
+    AsmSectionId& currentSection;
     uint64_t& currentOutPos;
     
     bool withSectionDiffs() const
@@ -633,13 +657,13 @@ private:
                    bool localLabel = true, bool dontCreateSymbol = false);
     bool skipSymbol(const char*& linePtr);
     
-    bool setSymbol(AsmSymbolEntry& symEntry, uint64_t value, cxuint sectionId);
+    bool setSymbol(AsmSymbolEntry& symEntry, uint64_t value, AsmSectionId sectionId);
     
     bool assignSymbol(const CString& symbolName, const char* symbolPlace,
                   const char* linePtr, bool reassign = true, bool baseExpr = false);
     
-    bool assignOutputCounter(const char* symbolPlace, uint64_t value, cxuint sectionId,
-                     cxbyte fillValue = 0);
+    bool assignOutputCounter(const char* symbolPlace, uint64_t value,
+                    AsmSectionId sectionId, cxbyte fillValue = 0);
     
     void parsePseudoOps(const CString& firstName, const char* stmtPlace,
                 const char* linePtr);
@@ -715,7 +739,7 @@ private:
     void goToSection(const char* pseudoOpPlace, const char* sectionName, uint64_t align=0);
     void goToSection(const char* pseudoOpPlace, const char* sectionName,
                      AsmSectionType type, Flags flags, uint64_t align=0);
-    void goToSection(const char* pseudoOpPlace, cxuint sectionId, uint64_t align=0);
+    void goToSection(const char* pseudoOpPlace, AsmSectionId sectionId, uint64_t align=0);
     
     void printWarningForRange(cxuint bits, uint64_t value, const AsmSourcePos& pos,
                   cxbyte signess = WS_BOTH);
@@ -735,21 +759,22 @@ private:
         return currentSection==ASMSECT_ABS ||
                 (sections[currentSection].flags & ASMSECT_UNRESOLVABLE) == 0;
     }
-    bool isResolvableSection(cxuint sectionId) const
+    bool isResolvableSection(AsmSectionId sectionId) const
     {
         return sectionId==ASMSECT_ABS ||
                 (sections[sectionId].flags & ASMSECT_UNRESOLVABLE) == 0;
     }
     
     // oldKernels and newKernels must be sorted
-    void handleRegionsOnKernels(const std::vector<cxuint>& newKernels,
-                const std::vector<cxuint>& oldKernels, cxuint codeSection);
+    void handleRegionsOnKernels(const std::vector<AsmKernelId>& newKernels,
+                const std::vector<AsmKernelId>& oldKernels, AsmSectionId codeSection);
     
     void tryToResolveSymbol(AsmSymbolEntry& symEntry);
     void tryToResolveSymbols(AsmScope* scope);
     void printUnresolvedSymbols(AsmScope* scope);
     
-    bool resolveExprTarget(const AsmExpression* expr, uint64_t value, cxuint sectionId);
+    bool resolveExprTarget(const AsmExpression* expr, uint64_t value,
+                        AsmSectionId sectionId);
     
     void cloneSymEntryIfNeeded(AsmSymbolEntry& symEntry);
     
@@ -874,7 +899,7 @@ public:
     const std::vector<AsmSection>& getSections() const
     { return sections; }
     // get first sections for rel spaces
-    const std::vector<Array<cxuint> >& getRelSpacesSections() const
+    const std::vector<Array<AsmSectionId> >& getRelSpacesSections() const
     { return relSpacesSections; }
     /// get kernel map
     const KernelMap& getKernelMap() const
@@ -904,6 +929,9 @@ public:
     /// get format handler
     const AsmFormatHandler* getFormatHandler() const
     { return formatHandler; }
+    /// get ISA assembler
+    const ISAAssembler* getISAAssembler() const
+    { return isaAssembler; }
 };
 
 inline void ISAAssembler::printWarning(const char* linePtr, const char* message)
@@ -922,7 +950,8 @@ inline void ISAAssembler::printWarning(const AsmSourcePos& sourcePos, const char
 inline void ISAAssembler::printError(const AsmSourcePos& sourcePos, const char* message)
 { assembler.printError(sourcePos, message); }
 
-inline void ISAAssembler::addCodeFlowEntry(cxuint sectionId, const AsmCodeFlowEntry& entry)
+inline void ISAAssembler::addCodeFlowEntry(AsmSectionId sectionId,
+                    const AsmCodeFlowEntry& entry)
 { assembler.sections[sectionId].addCodeFlowEntry(entry); }
 
 };

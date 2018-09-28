@@ -704,7 +704,6 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     /* FLAT encoding */
     { "flat_load_ubyte v47, v[187:188] nv\n", 0xdc400000U, 0x2f8000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188]\n", 0xdc400000U, 0x2f0000bbU, true, true, "" },
-    { "flat_load_ubyte v47, v[187:188] lds\n", 0xdc402000U, 0x2f0000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188] inst_offset:529\n",
         0xdc400211U, 0x2f0000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188] inst_offset:zzz\nzzz=529\n",
@@ -746,6 +745,8 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     { "scratch_load_ubyte v47, v187, off inst_offset:zzx glc slc\nzzx=-4096\n",
         0xdc435000U, 0x2f7f00bbU, true, true, "" },
     /* FLAT SCRATCH instructions */
+    { "scratch_load_sbyte v47, off, s49 glc slc lds\n",
+        0xdc476000U, 0x2f310000U, true, true, "" },
     { "scratch_load_sbyte v47, off, s49 glc slc\n",
         0xdc474000U, 0x2f310000U, true, true, "" },
     { "scratch_load_ushort v47, off, s49 glc slc\n",
@@ -789,6 +790,8 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     { "scratch_load_short_d16_hi v47, off, s49 glc slc\n",
         0xdc974000U, 0x2f310000U, true, true, "" },
     /* FLAT GLOBAL encoding */
+    { "global_load_ubyte v47, v187, s[50:51] glc slc lds\n",
+        0xdc43a000U, 0x2f3200bbU, true, true, "" },
     { "global_load_ubyte v47, v187, s[50:51] glc slc\n",
         0xdc438000U, 0x2f3200bbU, true, true, "" },
     { "global_load_ubyte v47, v[187:188], off glc slc\n",
@@ -903,5 +906,45 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     /* GLOBAL error wrong VADDR */
     { "global_load_ubyte v47, v[187:188], s[50:51] glc slc\n",
         0, 0, false, false, "test.s:1:24: Error: Required 1 vector register\n" },
+    // VOP3 CMP
+    { "    v_cmp_f_f16 s[46:47], v78, v201", 0xd020002eU, 0x3934eU, true, true, "" },
+    { "    v_cmp_lt_f16 s[46:47], v78, v201", 0xd021002eU, 0x3934eU, true, true, "" },
+    { nullptr, 0, 0, false, false, 0 }
+};
+
+const GCNAsmOpcodeCase encGCN141OpcodeCases[] =
+{
+    { "v_mad_mix_f32   v55, v79, v166, v229\n", 0xd3a04037U, 0x1f974d4fU, true, true, "" },
+    { "v_mad_mixlo_f16 v55, v79, v166, v229\n", 0xd3a14037U, 0x1f974d4fU, true, true, "" },
+    { "v_mad_mixhi_f16 v55, v79, v166, v229\n", 0xd3a24037U, 0x1f974d4fU, true, true, "" },
+    { "v_fma_mix_f32   v55, v79, v166, v229\n", 0xd3a04037U, 0x1f974d4fU, true, true, "" },
+    { "v_fma_mixlo_f16 v55, v79, v166, v229\n", 0xd3a14037U, 0x1f974d4fU, true, true, "" },
+    { "v_fma_mixhi_f16 v55, v79, v166, v229\n", 0xd3a24037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot2_f32_f16  v55, v79, v166, v229\n", 0xd3a34037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot2_i32_i16  v55, v79, v166, v229\n", 0xd3a64037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot2_u32_u16  v55, v79, v166, v229\n", 0xd3a74037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot4_i32_i8   v55, v79, v166, v229\n", 0xd3a84037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot4_u32_u8   v55, v79, v166, v229\n", 0xd3a94037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot8_i32_i4   v55, v79, v166, v229\n", 0xd3aa4037U, 0x1f974d4fU, true, true, "" },
+    { "v_dot8_u32_u4   v55, v79, v166, v229\n", 0xd3ab4037U, 0x1f974d4fU, true, true, "" },
+    { "v_fmac_f32      v154, v21, v107\n", 0x7734d715U, 0, false, true, ""  },
+    { "v_fmac_f32      v55, s27, v90 vop3\n", 0xd13b0037U, 0x0002b41bU, true, true, "" },
+    { "v_xnor_b32      v154, v21, v107\n", 0x7b34d715U, 0, false, true, "" },
+    { "v_xnor_b32      v55, s27, v90 vop3\n", 0xd13d0037U, 0x0002b41bU, true, true, "" },
+    // VOP3P from GCN 1.4
+    { "v_pk_mad_i16    v55, v79, v166, v229 op_sel_hi:[0,0,0]\n",
+        0xd3800037U, 0x07974d4fU, true, true, "" },
+    { "v_pk_mad_i16    v55, v79, v166, v229\n",
+        0xd3804037U, 0x1f974d4fU, true, true, "" },
+    { "v_pk_mad_i16    v55, v79, v166, v229 op_sel_hi:[1,0,0]\n",
+        0xd3800037U, 0x0f974d4fU, true, true, "" },
+    { "v_addc_co_u32   v154, vcc, v21, v107, vcc\n", 0x3934d715U, 0, false, true, "" },
+    { "v_subb_co_u32   v154, vcc, v21, v107, vcc\n", 0x3b34d715U, 0, false, true, "" },
+    { "v_mov_prsv_b32  v55, v27 vop3\n", 0xd1760037U, 0x0000011bU, true, true, "" },
+    { "v_screen_partition_4se_b32 v55, v27 vop3\n",
+        0xd1770037U, 0x0000011bU, true, true, "" },
+    // VOP3 CMP
+    { "    v_cmp_f_f16 s[46:47], v78, v201", 0xd020002eU, 0x3934eU, true, true, "" },
+    { "    v_cmp_lt_f16 s[46:47], v78, v201", 0xd021002eU, 0x3934eU, true, true, "" },
     { nullptr, 0, 0, false, false, 0 }
 };

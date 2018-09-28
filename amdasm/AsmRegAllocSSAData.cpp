@@ -74,7 +74,7 @@ static void handleSSAEntryWhileResolving(SSAReplacesMap* replacesMap,
         
         if (stackVarMap != nullptr)
         {
-            // resolve conflict for this variable ssaId>.
+            // resolve conflict for this variable ssaId.
             // only if in previous block previous SSAID is
             // read before all writes
             auto it = stackVarMap->find(sentry.first);
@@ -1391,19 +1391,17 @@ void AsmRegAllocator::createSSAData(ISAUsageHandler& usageHandler,
 {
     if (codeBlocks.empty())
         return;
-    usageHandler.rewind();
     auto cbit = codeBlocks.begin();
     AsmRegVarUsage rvu;
+    ISAUsageHandler::ReadPos usagePos{ 0, 0 };
     
-    if (!usageHandler.hasNext())
+    if (!usageHandler.hasNext(usagePos))
         return; // do nothing if no regusages
-    ISAUsageHandler::ReadPos oldReadPos = usageHandler.getReadPos();
+    ISAUsageHandler::ReadPos oldReadPos = usagePos;
     // old linear deps position
-    rvu = usageHandler.nextUsage();
+    rvu = usageHandler.nextUsage(usagePos);
     
     cxuint regRanges[MAX_REGTYPES_NUM*2];
-    cxuint realRegsCount[MAX_REGTYPES_NUM];
-    std::fill(realRegsCount, realRegsCount+MAX_REGTYPES_NUM, 0);
     size_t regTypesNum;
     assembler.isaAssembler->getRegisterRanges(regTypesNum, regRanges);
     
@@ -1417,10 +1415,10 @@ void AsmRegAllocator::createSSAData(ISAUsageHandler& usageHandler,
         if (cbit == codeBlocks.end())
             break;
         // skip rvu's before codeblock
-        while (rvu.offset < cbit->start && usageHandler.hasNext())
+        while (rvu.offset < cbit->start && usageHandler.hasNext(usagePos))
         {
-            oldReadPos = usageHandler.getReadPos();
-            rvu = usageHandler.nextUsage();
+            oldReadPos = usagePos;
+            rvu = usageHandler.nextUsage(usagePos);
         }
         if (rvu.offset < cbit->start)
             break;
@@ -1456,10 +1454,10 @@ void AsmRegAllocator::createSSAData(ISAUsageHandler& usageHandler,
             }
             
             // get next rvusage
-            if (!usageHandler.hasNext())
+            if (!usageHandler.hasNext(usagePos))
                 break;
-            oldReadPos = usageHandler.getReadPos();
-            rvu = usageHandler.nextUsage();
+            oldReadPos = usagePos;
+            rvu = usageHandler.nextUsage(usagePos);
         }
         // prepping ssaInfoMap array in cblock (put and sorting)
         cbit->ssaInfoMap.resize(ssaInfoMap.size());
@@ -1468,45 +1466,10 @@ void AsmRegAllocator::createSSAData(ISAUsageHandler& usageHandler,
         
         ++cbit;
     }
-    
-    // fillup linear dep position in code blocks
-    linDepHandler.rewind();
-    cbit = codeBlocks.begin();
-    
-    if (linDepHandler.hasNext())
-    {
-        AsmRegVarLinearDep linDep;
-        size_t oldLDReadPos = linDepHandler.getReadPos();
-        // old linear deps position
-        linDep = linDepHandler.nextLinearDep();
-        
-        while (true)
-        {
-            while (cbit != codeBlocks.end() && cbit->end <= linDep.offset)
-            {
-                cbit->linearDepPos = oldLDReadPos;
-                ++cbit;
-            }
-            if (cbit == codeBlocks.end())
-                break;
-            // skip linDep's before codeblock
-            while (linDep.offset < cbit->start && linDepHandler.hasNext())
-            {
-                oldLDReadPos = linDepHandler.getReadPos();
-                linDep = linDepHandler.nextLinearDep();
-            }
-            if (linDep.offset < cbit->start)
-                break;
-            
-            cbit->linearDepPos = oldLDReadPos;
-            while (linDep.offset < cbit->end && linDepHandler.hasNext())
-            {
-                oldLDReadPos = linDepHandler.getReadPos();
-                linDep = linDepHandler.nextLinearDep();
-            }
-            ++cbit;
-        }
-    }
+    oldReadPos = usagePos;
+    // fill up remaining codeblocks oldReadPos
+    for (; cbit != codeBlocks.end(); ++cbit)
+        cbit->usagePos = oldReadPos;
     
     size_t rbwCount = 0;
     size_t wrCount = 0;

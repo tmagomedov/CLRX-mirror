@@ -66,9 +66,23 @@ AmdCL2GPUBinGenerator::AmdCL2GPUBinGenerator(bool _64bitMode,
        const std::vector<AmdCL2KernelInput>& kernelInputs)
         : manageable(true), input(nullptr)
 {
-    input = new AmdCL2Input{_64bitMode, deviceType, archMinor, archStepping,
-                globalDataSize, globalData, rwDataSize, rwData, 0, 0, 0,
-                nullptr, false, { }, { }, driverVersion, "", "", kernelInputs };
+    std::unique_ptr<AmdCL2Input> _input(new AmdCL2Input{});
+    _input->is64Bit = _64bitMode;
+    _input->deviceType = deviceType;
+    _input->archMinor = archMinor;
+    _input->archStepping = archStepping;
+    _input->globalDataSize = globalDataSize;
+    _input->globalData = globalData;
+    _input->rwDataSize = rwDataSize;
+    _input->rwData = rwData;
+    _input->bssAlignment = _input->bssSize = _input->samplerInitSize = 0;
+    _input->samplerInit = nullptr;
+    _input->samplerConfig = false;
+    _input->driverVersion = driverVersion;
+    _input->compileOptions = "";
+    _input->aclVersion = "";
+    _input->kernels = kernelInputs;
+    input = _input.release();
 }
 
 AmdCL2GPUBinGenerator::AmdCL2GPUBinGenerator(bool _64bitMode,
@@ -78,10 +92,23 @@ AmdCL2GPUBinGenerator::AmdCL2GPUBinGenerator(bool _64bitMode,
        std::vector<AmdCL2KernelInput>&& kernelInputs)
         : manageable(true), input(nullptr)
 {
-    input = new AmdCL2Input{_64bitMode, deviceType, archMinor, archStepping,
-                globalDataSize, globalData, rwDataSize, rwData, 0, 0, 0,
-                nullptr, false, { }, { }, driverVersion, "", "",
-                std::move(kernelInputs) };
+    std::unique_ptr<AmdCL2Input> _input(new AmdCL2Input{});
+    _input->is64Bit = _64bitMode;
+    _input->deviceType = deviceType;
+    _input->archMinor = archMinor;
+    _input->archStepping = archStepping;
+    _input->globalDataSize = globalDataSize;
+    _input->globalData = globalData;
+    _input->rwDataSize = rwDataSize;
+    _input->rwData = rwData;
+    _input->bssAlignment = _input->bssSize = _input->samplerInitSize = 0;
+    _input->samplerInit = nullptr;
+    _input->samplerConfig = false;
+    _input->driverVersion = driverVersion;
+    _input->compileOptions = "";
+    _input->aclVersion = "";
+    _input->kernels = std::move(kernelInputs);
+    input = _input.release();
 }
 
 AmdCL2GPUBinGenerator::~AmdCL2GPUBinGenerator()
@@ -158,7 +185,7 @@ static const ArgTypeSizes argTypeSizesTable[] =
 // tables with GPU device codes for specific driver version
 // for almost cases are matches.
 
-static const uint32_t gpuDeviceCodeTable[28] =
+static const uint32_t gpuDeviceCodeTable[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -187,10 +214,12 @@ static const uint32_t gpuDeviceCodeTable[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable15_7[28] =
+static const uint32_t gpuDeviceCodeTable15_7[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -219,10 +248,12 @@ static const uint32_t gpuDeviceCodeTable15_7[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable16_3[28] =
+static const uint32_t gpuDeviceCodeTable16_3[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -251,10 +282,12 @@ static const uint32_t gpuDeviceCodeTable16_3[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTableGPUPRO[28] =
+static const uint32_t gpuDeviceCodeTableGPUPRO[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -283,10 +316,12 @@ static const uint32_t gpuDeviceCodeTableGPUPRO[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2236[28] =
+static const uint32_t gpuDeviceCodeTable2236[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -315,10 +350,12 @@ static const uint32_t gpuDeviceCodeTable2236[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2264[28] =
+static const uint32_t gpuDeviceCodeTable2264[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -347,10 +384,12 @@ static const uint32_t gpuDeviceCodeTable2264[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2348[28] =
+static const uint32_t gpuDeviceCodeTable2348[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -379,10 +418,12 @@ static const uint32_t gpuDeviceCodeTable2348[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2442[28] =
+static const uint32_t gpuDeviceCodeTable2442[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -411,10 +452,12 @@ static const uint32_t gpuDeviceCodeTable2442[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2482[28] =
+static const uint32_t gpuDeviceCodeTable2482[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -443,10 +486,12 @@ static const uint32_t gpuDeviceCodeTable2482[28] =
     UINT_MAX, // GPUDeviceType::GFX902
     UINT_MAX, // GPUDeviceType::GFX903
     UINT_MAX, // GPUDeviceType::GFX904
-    UINT_MAX  // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
 
-static const uint32_t gpuDeviceCodeTable2527[28] =
+static const uint32_t gpuDeviceCodeTable2527[30] =
 {
     UINT_MAX, // GPUDeviceType::CAPE_VERDE
     UINT_MAX, // GPUDeviceType::PITCAIRN
@@ -475,8 +520,45 @@ static const uint32_t gpuDeviceCodeTable2527[28] =
     24, // GPUDeviceType::GFX902
     25, // GPUDeviceType::GFX903
     26, // GPUDeviceType::GFX904
-    27  // GPUDeviceType::GFX905
+    27, // GPUDeviceType::GFX905
+    UINT_MAX, // GPUDeviceType::GFX906
+    UINT_MAX  // GPUDeviceType::GFX907
 };
+
+static const uint32_t gpuDeviceCodeTable2580[30] =
+{
+    UINT_MAX, // GPUDeviceType::CAPE_VERDE
+    UINT_MAX, // GPUDeviceType::PITCAIRN
+    UINT_MAX, // GPUDeviceType::TAHITI
+    UINT_MAX, // GPUDeviceType::OLAND
+    6, // GPUDeviceType::BONAIRE
+    1, // GPUDeviceType::SPECTRE
+    2, // GPUDeviceType::SPOOKY
+    3, // GPUDeviceType::KALINDI
+    UINT_MAX, // GPUDeviceType::HAINAN
+    7, // GPUDeviceType::HAWAII
+    8, // GPUDeviceType::ICELAND
+    9, // GPUDeviceType::TONGA
+    4, // GPUDeviceType::MULLINS
+    13, // GPUDeviceType::FIJI
+    12, // GPUDeviceType::CARRIZO
+    14, // GPUDeviceType::DUMMY
+    16, // GPUDeviceType::GOOSE
+    18, // GPUDeviceType::HORSE
+    14, // GPUDeviceType::STONEY
+    18, // GPUDeviceType::ELLESMERE
+    16, // GPUDeviceType::BAFFIN
+    21, // GPUDeviceType::GFX804
+    20, // GPUDeviceType::GFX900
+    23, // GPUDeviceType::GFX901
+    24, // GPUDeviceType::GFX902
+    25, // GPUDeviceType::GFX903
+    26, // GPUDeviceType::GFX904
+    27, // GPUDeviceType::GFX905
+    28, // GPUDeviceType::GFX906
+    29  // GPUDeviceType::GFX907
+};
+
 
 struct CLRX_INTERNAL CL2GPUGenCodeTable
 {
@@ -497,7 +579,8 @@ static const CL2GPUGenCodeTable cl2GenCodeTables[] =
     { 244200U, gpuDeviceCodeTable2348 },
     { 248200U, gpuDeviceCodeTable2442 },
     { 252700U, gpuDeviceCodeTable2482 },
-    { UINT_MAX, gpuDeviceCodeTable2527 }
+    { 258000U, gpuDeviceCodeTable2527 },
+    { UINT_MAX, gpuDeviceCodeTable2580 }
 };
 
 static const uint16_t mainBuiltinSectionTable[] =
@@ -539,7 +622,7 @@ static const cxbyte kernelIsaMetadata[] =
 // arch name in metadata
 static const char* amdcl2GPUArchNameWordTable[] =
 {
-    "GFX6", "GFX7", "GFX8", "GFX9"
+    "GFX6", "GFX7", "GFX8", "GFX9", "GFX9"
 };
 
 static void prepareKernelTempData(const AmdCL2Input* input,
@@ -832,12 +915,12 @@ private:
     const Array<TempAmdCL2KernelData>& tempDatas;
     const CString& aclVersion;
     const uint16_t* mainSectTable;
-    cxuint extraSectionIndex;
+    ElfBinSectId extraSectionIndex;
 public:
     CL2MainSymTabGen(const AmdCL2Input* _input,
              const Array<TempAmdCL2KernelData>& _tempDatas,
              const CString& _aclVersion, const uint16_t* _mainSectTable,
-             cxuint _extraSectionIndex)
+             ElfBinSectId _extraSectionIndex)
              : input(_input), withBrig(false), tempDatas(_tempDatas),
                aclVersion(_aclVersion), mainSectTable(_mainSectTable),
                extraSectionIndex(_extraSectionIndex)
@@ -1821,6 +1904,10 @@ public:
     
     size_t size() const
     {
+        if (input->code != nullptr)
+            // if HSA layout (main code is set)
+            return input->codeSize;
+        
         size_t out = 0;
         for (const TempAmdCL2KernelData& tempData: tempDatas)
         {
@@ -1835,6 +1922,44 @@ public:
     void operator()(FastOutputBuffer& fob) const
     {
         GPUArchitecture arch = getGPUArchitectureFromDeviceType(input->deviceType);
+        if (input->code != nullptr)
+        {
+            Array<size_t> sortedKIndices(input->kernels.size());
+            for (size_t i = 0; i < sortedKIndices.size(); i++)
+                sortedKIndices[i] = i;
+            // sort by offset
+            std::sort(sortedKIndices.begin(), sortedKIndices.end(),
+                [this] (size_t a, size_t b)
+                { return input->kernels[a].offset < input->kernels[b].offset; });
+            
+            // put code and kernel setups
+            size_t curOffset = 0;
+            for (size_t ki = 0; ki < input->kernels.size(); ki++)
+            {
+                const size_t kindex = sortedKIndices[ki];
+                const AmdCL2KernelInput& kernel = input->kernels[kindex];
+                const TempAmdCL2KernelData& tempData = tempDatas[kindex];
+                fob.writeArray(kernel.offset - curOffset, input->code + curOffset);
+                
+                // write kernel setup
+                if (!kernel.useConfig || kernel.hsaConfig)
+                {
+                    if (kernel.setup != nullptr)
+                        fob.writeArray(tempData.setupSize, kernel.setup);
+                    else
+                        // no changes if no setup supplied
+                        fob.writeArray(tempData.setupSize, input->code + kernel.offset);
+                }
+                else
+                    generateKernelSetup(arch, kernel.config, fob, true, tempData.useLocals,
+                            tempData.pipesUsed!=0, input->is64Bit, input->driverVersion);
+                curOffset = kernel.offset + tempData.setupSize;
+            }
+            // if HSA layout (code is set)
+            fob.writeArray(input->codeSize - curOffset, input->code + curOffset);
+            return;
+        }
+        
         size_t outSize = 0;
         for (size_t i = 0; i < input->kernels.size(); i++)
         {
@@ -1977,6 +2102,10 @@ public:
     
     size_t size() const
     {
+        if (input->code != nullptr)
+            // if HSA layout
+            return input->relocations.size()*sizeof(Elf64_Rela);
+        
         size_t out = 0;
         for (const AmdCL2KernelInput& kernel: input->kernels)
             out += kernel.relocations.size()*sizeof(Elf64_Rela);
@@ -2006,6 +2135,23 @@ public:
             bssSymIndex = gdataSymIndex; // first is bss data symbol index
             gdataSymIndex++;
         }
+        
+        if (input->code != nullptr)
+        {
+            // if HSA layout (main code for inner binary)
+            for (const AmdCL2RelInput& inRel: input->relocations)
+            {
+                SLEV(rela.r_offset, inRel.offset);
+                uint32_t type = (inRel.type==RELTYPE_LOW_32BIT) ? 1 : 2;
+                uint32_t symIndex = (inRel.symbol==1) ? adataSymIndex : 
+                    ((inRel.symbol==2) ? bssSymIndex : gdataSymIndex);
+                SLEV(rela.r_info, ELF64_R_INFO(symIndex, type));
+                SLEV(rela.r_addend, inRel.addend);
+                fob.writeObject(rela);
+            }
+            return;
+        }
+        
         for (size_t i = 0; i < input->kernels.size(); i++)
         {
             const AmdCL2KernelInput& kernel = input->kernels[i];
@@ -2013,12 +2159,12 @@ public:
             
             codeOffset += tempData.setupSize;
             // write relocations in kernel code
-            for (const AmdCL2RelInput inRel: kernel.relocations)
+            for (const AmdCL2RelInput& inRel: kernel.relocations)
             {
                 SLEV(rela.r_offset, inRel.offset + codeOffset);
                 uint32_t type = (inRel.type==RELTYPE_LOW_32BIT) ? 1 : 2;
                 uint32_t symIndex = (inRel.symbol==1) ? adataSymIndex : 
-                    ((inRel.symbol==2) ? bssSymIndex: gdataSymIndex);
+                    ((inRel.symbol==2) ? bssSymIndex : gdataSymIndex);
                 SLEV(rela.r_info, ELF64_R_INFO(symIndex, type));
                 SLEV(rela.r_addend, inRel.addend);
                 fob.writeObject(rela);
@@ -2086,7 +2232,8 @@ static CString constructName(size_t prefixSize, const char* prefix, const CStrin
 // uses stringPool to correctly holds symbol names
 static void putInnerSymbols(ElfBinaryGen64& innerBinGen, const AmdCL2Input* input,
         const Array<TempAmdCL2KernelData>& tempDatas, const uint16_t* builtinSectionTable,
-        cxuint extraSeciontIndex, std::vector<CString>& stringPool, size_t dataSymbolsNum)
+        ElfBinSectId extraSeciontIndex, std::vector<CString>& stringPool,
+        size_t dataSymbolsNum)
 {
     const size_t samplersNum = (input->samplerConfig) ? input->samplers.size() :
                 (input->samplerInitSize>>3);
@@ -2123,8 +2270,13 @@ static void putInnerSymbols(ElfBinaryGen64& innerBinGen, const AmdCL2Input* inpu
         // first, we put sampler objects
         const AmdCL2KernelInput& kernel = input->kernels[i];
         const TempAmdCL2KernelData& tempData = tempDatas[i];
-        if ((codePos & 255) != 0)
-            codePos += 256-(codePos&255);
+        if (input->code == nullptr)
+        {
+            if ((codePos & 255) != 0)
+                codePos += 256-(codePos&255);
+        }
+        else
+            codePos = kernel.offset;
         
         if (kernel.useConfig)
             for (cxuint samp: kernel.config.samplers)
@@ -2151,7 +2303,8 @@ static void putInnerSymbols(ElfBinaryGen64& innerBinGen, const AmdCL2Input* inpu
                   ELF64_ST_INFO(STB_GLOBAL, 10), 0, false, codePos, 
                   kernel.codeSize + tempData.setupSize));
         nameIdx++;
-        codePos += kernel.codeSize + tempData.setupSize;
+        if (input->code == nullptr)
+            codePos += kernel.codeSize + tempData.setupSize;
     }
     
     // symbols for global samplers
@@ -2284,6 +2437,21 @@ void AmdCL2GPUBinGenerator::generateInternal(std::ostream* osPtr, std::vector<ch
     Array<TempAmdCL2KernelData> tempDatas(kernelsNum);
     prepareKernelTempData(input, tempDatas);
     
+    if (newBinaries && input->code != nullptr)
+    {
+        for (const AmdCL2KernelInput& kernel: input->kernels)
+            if (kernel.offset >= input->codeSize)
+                throw BinGenException("Kernel offset outside code size");
+        
+        for (const AmdCL2RelInput& rel: input->relocations)
+        {
+            if (rel.type > RELTYPE_HIGH_32BIT || rel.symbol > 2)
+                throw BinGenException("Wrong relocation symbol or type");
+            if (rel.offset+4 > input->codeSize)
+                throw BinGenException("Relocation offset outside code size");
+        }
+    }
+    
     const size_t dataSymbolsNum = std::count_if(input->innerExtraSymbols.begin(),
         input->innerExtraSymbols.end(), [](const BinSymbol& symbol)
         { return symbol.sectionId==ELFSECTID_RODATA || symbol.sectionId==ELFSECTID_DATA ||
@@ -2350,7 +2518,8 @@ void AmdCL2GPUBinGenerator::generateInternal(std::ostream* osPtr, std::vector<ch
         for (const AmdCL2KernelInput& kernel: input->kernels)
             for (const AmdCL2RelInput& rel: kernel.relocations)
                 if (rel.offset >= kernel.codeSize)
-                    throw BinGenException("Kernel text relocation offset outside kernel code");
+                    throw BinGenException(
+                            "Kernel text relocation offset outside kernel code");
         
         std::fill(innerBinSectionTable,
                   innerBinSectionTable+innerBinSectonTableLen, SHN_UNDEF);

@@ -84,7 +84,7 @@ struct CLRX_INTERNAL AsmParseUtils
     static bool getAbsoluteValueArg(Assembler& asmr, uint64_t& value, const char*& linePtr,
                     bool requiredExpr = false);
     
-    static bool getAnyValueArg(Assembler& asmr, uint64_t& value, cxuint& sectionId,
+    static bool getAnyValueArg(Assembler& asmr, uint64_t& value, AsmSectionId& sectionId,
                     const char*& linePtr);
     
     static bool getJumpValueArg(Assembler& asmr, uint64_t& value,
@@ -135,7 +135,7 @@ struct CLRX_INTERNAL AsmParseUtils
                     bool twoFields = false);
     
     static void setSymbolValue(Assembler& asmr, const char* linePtr,
-                    uint64_t value, cxuint sectionId);
+                    uint64_t value, AsmSectionId sectionId);
 };
 
 enum class AsmPredefined: cxbyte
@@ -330,6 +330,18 @@ struct CLRX_INTERNAL AsmPseudoOps: AsmParseUtils
     static void ignoreString(Assembler& asmr, const char* linePtr);
     
     static bool checkPseudoOpName(const CString& string);
+};
+
+struct CLRX_INTERNAL AsmKcodePseudoOps : AsmParseUtils
+{
+    // .kcode (open kernel code)
+    static void doKCode(AsmKcodeHandler& handler, const char* pseudoOpPlace,
+                      const char* linePtr);
+    // .kcodeend (close kernel code)
+    static void doKCodeEnd(AsmKcodeHandler& handler, const char* pseudoOpPlace,
+                      const char* linePtr);
+    static void updateKCodeSel(AsmKcodeHandler& handler,
+                      const std::vector<cxuint>& oldset);
 };
 
 // macro helper to handle printing error

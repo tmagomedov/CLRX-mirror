@@ -138,18 +138,18 @@ void AsmGalliumHandler::Kernel::initializeAmdHsaKernelConfig()
  * GalliumCompute format handler
  */
 
-AsmGalliumHandler::AsmGalliumHandler(Assembler& assembler): AsmFormatHandler(assembler),
-             output{}, codeSection(0), dataSection(ASMSECT_NONE),
+AsmGalliumHandler::AsmGalliumHandler(Assembler& assembler):
+             AsmKcodeHandler(assembler), output{}, dataSection(ASMSECT_NONE),
              commentSection(ASMSECT_NONE), scratchSection(ASMSECT_NONE),
              extraSectionCount(0), archMinor(BINGEN_DEFAULT), archStepping(BINGEN_DEFAULT)
 {
+    codeSection = 0;
     assembler.currentKernel = ASMKERN_GLOBAL;
     assembler.currentSection = 0;
     // define .text section (will be first section)
     sections.push_back({ ASMKERN_GLOBAL, AsmSectionType::CODE,
                 ELFSECTID_TEXT, ".text" });
     inside = Inside::MAINLAYOUT;
-    currentKcodeKernel = ASMKERN_GLOBAL;
     savedSection = 0;
     // detect driver and LLVM version once for using many times
     detectedLLVMVersion = detectLLVMCompilerVersion();
@@ -180,14 +180,14 @@ cxuint AsmGalliumHandler::determineDriverVersion() const
         return assembler.getDriverVersion();
 }
 
-cxuint AsmGalliumHandler::addKernel(const char* kernelName)
+AsmKernelId AsmGalliumHandler::addKernel(const char* kernelName)
 {
-    cxuint thisKernel = output.kernels.size();
-    cxuint thisSection = sections.size();
+    AsmKernelId thisKernel = output.kernels.size();
+    AsmSectionId thisSection = sections.size();
     output.addEmptyKernel(kernelName, determineLLVMVersion());
     /// add kernel config section
     sections.push_back({ thisKernel, AsmSectionType::CONFIG, ELFSECTID_UNDEF, nullptr });
-    kernelStates.push_back(new Kernel{ thisSection, nullptr, ASMSECT_NONE, false, 0 });
+    kernelStates.push_back(new Kernel(thisSection));
     
     if (assembler.currentKernel == ASMKERN_GLOBAL)
         savedSection = assembler.currentSection;
@@ -198,9 +198,9 @@ cxuint AsmGalliumHandler::addKernel(const char* kernelName)
     return thisKernel;
 }
 
-cxuint AsmGalliumHandler::addSection(const char* sectionName, cxuint kernelId)
+AsmSectionId AsmGalliumHandler::addSection(const char* sectionName, AsmKernelId kernelId)
 {
-    const cxuint thisSection = sections.size();
+    const AsmSectionId thisSection = sections.size();
     Section section;
     section.kernelId = ASMKERN_GLOBAL;  // we ignore input kernelId, we go to main
     
@@ -254,7 +254,7 @@ cxuint AsmGalliumHandler::addSection(const char* sectionName, cxuint kernelId)
     return thisSection;
 }
 
-cxuint AsmGalliumHandler::getSectionId(const char* sectionName) const
+AsmSectionId AsmGalliumHandler::getSectionId(const char* sectionName) const
 {
     if (::strcmp(sectionName, ".rodata") == 0) // data
         return dataSection;
@@ -272,7 +272,7 @@ cxuint AsmGalliumHandler::getSectionId(const char* sectionName) const
     return ASMSECT_NONE;
 }
 
-void AsmGalliumHandler::setCurrentKernel(cxuint kernel)
+void AsmGalliumHandler::setCurrentKernel(AsmKernelId kernel)
 {
     // set kernel and their default section
     if (kernel != ASMKERN_GLOBAL && kernel >= kernelStates.size())
@@ -289,7 +289,7 @@ void AsmGalliumHandler::setCurrentKernel(cxuint kernel)
     inside = Inside::MAINLAYOUT;
 }
 
-void AsmGalliumHandler::setCurrentSection(cxuint sectionId)
+void AsmGalliumHandler::setCurrentSection(AsmSectionId sectionId)
 {
     if (sectionId >= sections.size())
         throw AsmFormatException("SectionId out of range");
@@ -302,7 +302,8 @@ void AsmGalliumHandler::setCurrentSection(cxuint sectionId)
     inside = Inside::MAINLAYOUT;
 }
 
-AsmFormatHandler::SectionInfo AsmGalliumHandler::getSectionInfo(cxuint sectionId) const
+AsmFormatHandler::SectionInfo AsmGalliumHandler::getSectionInfo(
+                            AsmSectionId sectionId) const
 {
     if (sectionId >= sections.size())
         throw AsmFormatException("Section doesn't exists");
@@ -324,54 +325,16 @@ AsmFormatHandler::SectionInfo AsmGalliumHandler::getSectionInfo(cxuint sectionId
     return info;
 }
 
-// check whether label is kernel label and restore register allocation to this kernel
-void AsmGalliumHandler::handleLabel(const CString& label)
+bool AsmGalliumHandler::isCodeSection() const
 {
-    if (assembler.sections[assembler.currentSection].type != AsmSectionType::CODE)
-        return;
-    auto kit = assembler.kernelMap.find(label);
-    if (kit == assembler.kernelMap.end())
-        return;
-    if (!kcodeSelection.empty())
-        return; // do not change if inside kcode
-    // add code start
-    assembler.sections[assembler.currentSection].addCodeFlowEntry({
-                    size_t(assembler.currentOutPos), 0, AsmCodeFlowType::START });
-    // save other state
-    saveKcodeCurrentAllocRegs();
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-        assembler.kernels[currentKcodeKernel].closeCodeRegion(
-                        assembler.sections[codeSection].content.size());
-    // restore this state
-    currentKcodeKernel = kit->second;
-    restoreKcodeCurrentAllocRegs();
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-        assembler.kernels[currentKcodeKernel].openCodeRegion(
-                        assembler.sections[codeSection].content.size());
+    return sections[assembler.currentSection].type == AsmSectionType::CODE;
 }
 
-void AsmGalliumHandler::restoreKcodeCurrentAllocRegs()
-{
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        Kernel& newKernel = *kernelStates[currentKcodeKernel];
-        assembler.isaAssembler->setAllocatedRegisters(newKernel.allocRegs,
-                            newKernel.allocRegFlags);
-    }
-}
+AsmKcodeHandler::KernelBase& AsmGalliumHandler::getKernelBase(AsmKernelId index)
+{ return *kernelStates[index]; }
 
-void AsmGalliumHandler::saveKcodeCurrentAllocRegs()
-{
-    if (currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        // save other state
-        size_t regTypesNum;
-        Kernel& oldKernel = *kernelStates[currentKcodeKernel];
-        const cxuint* regs = assembler.isaAssembler->getAllocatedRegisters(
-                            regTypesNum, oldKernel.allocRegFlags);
-        std::copy(regs, regs+regTypesNum, oldKernel.allocRegs);
-    }
-}
+size_t AsmGalliumHandler::getKernelsNum() const
+{ return kernelStates.size(); }
 
 namespace CLRX
 {
@@ -491,7 +454,7 @@ void AsmGalliumPseudoOps::doControlDirective(AsmGalliumHandler& handler,
     if (kernel.ctrlDirSection == ASMSECT_NONE)
     {
         // create control directive if not exists
-        cxuint thisSection = handler.sections.size();
+        AsmSectionId thisSection = handler.sections.size();
         handler.sections.push_back({ asmr.currentKernel,
             AsmSectionType::GALLIUM_CONFIG_CTRL_DIRECTIVE,
             ELFSECTID_UNDEF, nullptr });
@@ -1111,144 +1074,13 @@ void AsmGalliumPseudoOps::doEntry(AsmGalliumHandler& handler,
     pentry.value = entryVal;
 }
 
-/* update kernel code selection, join all regallocation and store to
- * current kernel regalloc */
-void AsmGalliumPseudoOps::updateKCodeSel(AsmGalliumHandler& handler,
-          const std::vector<cxuint>& oldset)
-{
-    Assembler& asmr = handler.assembler;
-    // old elements - join current regstate with all them
-    size_t regTypesNum;
-    for (auto it = oldset.begin(); it != oldset.end(); ++it)
-    {
-        Flags curAllocRegFlags;
-        const cxuint* curAllocRegs = asmr.isaAssembler->getAllocatedRegisters(regTypesNum,
-                               curAllocRegFlags);
-        cxuint newAllocRegs[MAX_REGTYPES_NUM];
-        AsmGalliumHandler::Kernel& kernel = *handler.kernelStates[*it];
-        for (size_t i = 0; i < regTypesNum; i++)
-            newAllocRegs[i] = std::max(curAllocRegs[i], kernel.allocRegs[i]);
-        kernel.allocRegFlags |= curAllocRegFlags;
-        std::copy(newAllocRegs, newAllocRegs+regTypesNum, kernel.allocRegs);
-    }
-    asmr.isaAssembler->setAllocatedRegisters();
-}
-
-void AsmGalliumPseudoOps::doKCode(AsmGalliumHandler& handler, const char* pseudoOpPlace,
-                      const char* linePtr)
-{
-    Assembler& asmr = handler.assembler;
-    const char* end = asmr.line + asmr.lineSize;
-    bool good = true;
-    skipSpacesToEnd(linePtr, end);
-    if (linePtr==end)
-        return;
-    std::unordered_set<cxuint> newSel(handler.kcodeSelection.begin(),
-                          handler.kcodeSelection.end());
-    do {
-        CString kname;
-        const char* knamePlace = linePtr;
-        skipSpacesToEnd(linePtr, end);
-        bool removeKernel = false;
-        if (linePtr!=end && *linePtr=='-')
-        {
-            // '-' - remove this kernel from current kernel selection
-            removeKernel = true;
-            linePtr++;
-        }
-        else if (linePtr!=end && *linePtr=='+')
-        {
-            linePtr++;
-            skipSpacesToEnd(linePtr, end);
-            if (linePtr==end)
-            {
-                // add all kernels
-                for (cxuint k = 0; k < handler.kernelStates.size(); k++)
-                    newSel.insert(k);
-                break;
-            }
-        }
-        
-        if (!getNameArg(asmr, kname, linePtr, "kernel"))
-        { good = false; continue; }
-        auto kit = asmr.kernelMap.find(kname);
-        if (kit == asmr.kernelMap.end())
-        {
-            asmr.printError(knamePlace, "Kernel not found");
-            continue;
-        }
-        if (!removeKernel)
-            newSel.insert(kit->second);
-        else // remove kernel
-            newSel.erase(kit->second);
-    } while (skipCommaForMultipleArgs(asmr, linePtr));
-    
-    if (!good || !checkGarbagesAtEnd(asmr, linePtr))
-        return;
-    
-    if (handler.sections[asmr.currentSection].type != AsmSectionType::CODE)
-        PSEUDOOP_RETURN_BY_ERROR("KCode outside code")
-    if (handler.kcodeSelStack.empty())
-        handler.saveKcodeCurrentAllocRegs();
-    // push to stack
-    handler.kcodeSelStack.push(handler.kcodeSelection);
-    // set current sel
-    handler.kcodeSelection.assign(newSel.begin(), newSel.end());
-    std::sort(handler.kcodeSelection.begin(), handler.kcodeSelection.end());
-    
-    const std::vector<cxuint>& oldKCodeSel = handler.kcodeSelStack.top();
-    if (!oldKCodeSel.empty())
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
-                            handler.codeSection);
-    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        std::vector<cxuint> tempKCodeSel;
-        tempKCodeSel.push_back(handler.currentKcodeKernel);
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, tempKCodeSel,
-                            handler.codeSection);
-    }
-    
-    updateKCodeSel(handler, handler.kcodeSelStack.top());
-}
-
-void AsmGalliumPseudoOps::doKCodeEnd(AsmGalliumHandler& handler, const char* pseudoOpPlace,
-                  const char* linePtr)
-{
-    Assembler& asmr = handler.assembler;
-    if (handler.sections[asmr.currentSection].type != AsmSectionType::CODE)
-        PSEUDOOP_RETURN_BY_ERROR("KCodeEnd outside code")
-    if (handler.kcodeSelStack.empty())
-        PSEUDOOP_RETURN_BY_ERROR("'.kcodeend' without '.kcode'")
-    if (!checkGarbagesAtEnd(asmr, linePtr))
-        return;
-    
-    updateKCodeSel(handler, handler.kcodeSelection);
-    std::vector<cxuint> oldKCodeSel = handler.kcodeSelection;
-    handler.kcodeSelection = handler.kcodeSelStack.top();
-    
-    if (!handler.kcodeSelection.empty())
-        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
-                        handler.codeSection);
-    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
-    {
-        // if choosen current kernel
-        std::vector<cxuint> curKernelSel;
-        curKernelSel.push_back(handler.currentKcodeKernel);
-        asmr.handleRegionsOnKernels(curKernelSel, oldKCodeSel, handler.codeSection);
-    }
-    
-    handler.kcodeSelStack.pop();
-    if (handler.kcodeSelStack.empty())
-        handler.restoreKcodeCurrentAllocRegs();
-}
-
 void AsmGalliumPseudoOps::scratchSymbol(AsmGalliumHandler& handler, const char* linePtr)
 {
     Assembler& asmr = handler.assembler;
     if (handler.scratchSection == ASMSECT_NONE)
     {
         // add scratch section if not added
-        cxuint thisSection = handler.sections.size();
+        AsmSectionId thisSection = handler.sections.size();
         handler.sections.push_back({ ASMKERN_GLOBAL,
                 AsmSectionType::GALLIUM_SCRATCH, ELFSECTID_UNDEF, nullptr });
         handler.scratchSection = thisSection;
@@ -1416,10 +1248,10 @@ bool AsmGalliumHandler::parsePseudoOp(const CString& firstName,
                                     GALLIUMCVAL_IEEEMODE);
             break;
         case GALLIUMOP_KCODE:
-            AsmGalliumPseudoOps::doKCode(*this, stmtPlace, linePtr);
+            AsmKcodePseudoOps::doKCode(*this, stmtPlace, linePtr);
             break;
         case GALLIUMOP_KCODEEND:
-            AsmGalliumPseudoOps::doKCodeEnd(*this, stmtPlace, linePtr);
+            AsmKcodePseudoOps::doKCodeEnd(*this, stmtPlace, linePtr);
             break;
         case GALLIUMOP_KERNARG_SEGMENT_ALIGN:
             AsmGalliumPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
@@ -1605,7 +1437,7 @@ bool AsmGalliumHandler::parsePseudoOp(const CString& firstName,
 }
 
 bool AsmGalliumHandler::resolveSymbol(const AsmSymbol& symbol,
-                    uint64_t& value, cxuint& sectionId)
+                    uint64_t& value, AsmSectionId& sectionId)
 {
     if (!assembler.isResolvableSection(symbol.sectionId))
     {
@@ -1617,10 +1449,10 @@ bool AsmGalliumHandler::resolveSymbol(const AsmSymbol& symbol,
 }
 
 bool AsmGalliumHandler::resolveRelocation(const AsmExpression* expr, uint64_t& outValue,
-                    cxuint& outSectionId)
+                    AsmSectionId& outSectionId)
 {
     RelocType relType = RELTYPE_LOW_32BIT;
-    cxuint relSectionId = 0;
+    AsmSectionId relSectionId = 0;
     uint64_t relValue = 0;
     const AsmExprTarget& target = expr->getTarget();
     const AsmExprTargetType tgtType = target.type;
@@ -1660,20 +1492,7 @@ bool AsmGalliumHandler::prepareBinary()
     size_t sectionsNum = sections.size();
     size_t kernelsNum = kernelStates.size();
     output.deviceType = assembler.getDeviceType();
-    if (assembler.isaAssembler!=nullptr)
-    {
-        // make last kernel registers pool updates
-        if (kcodeSelStack.empty())
-            saveKcodeCurrentAllocRegs();
-        else
-            while (!kcodeSelStack.empty())
-            {
-                // pop from kcode stack and apply changes
-                AsmGalliumPseudoOps::updateKCodeSel(*this, kcodeSelection);
-                kcodeSelection = kcodeSelStack.top();
-                kcodeSelStack.pop();
-            }
-    }
+    prepareKcodeState();
     
     // set sections as outputs
     for (size_t i = 0; i < sectionsNum; i++)
@@ -1833,7 +1652,7 @@ bool AsmGalliumHandler::prepareBinary()
             }
             if (assembler.kernelMap.find(symEntry.first.c_str())!=assembler.kernelMap.end())
                 continue; // if kernel name
-            cxuint binSectId = (symEntry.second.sectionId != ASMSECT_ABS) ?
+            AsmSectionId binSectId = (symEntry.second.sectionId != ASMSECT_ABS) ?
                     sections[symEntry.second.sectionId].elfBinSectId : ELFSECTID_ABS;
             if (binSectId==ELFSECTID_UNDEF)
                 continue; // no section

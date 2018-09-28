@@ -68,19 +68,19 @@ void AsmFormatHandler::handleLabel(const CString& label)
 { }
 
 bool AsmFormatHandler::resolveSymbol(const AsmSymbol& symbol, uint64_t& value,
-                 cxuint& sectionId)
+                 AsmSectionId& sectionId)
 {
     return false;
 }
 
 bool AsmFormatHandler::resolveRelocation(const AsmExpression* expr, uint64_t& value,
-                 cxuint& sectionId)
+                 AsmSectionId& sectionId)
 {
     return false;
 }
 
 bool AsmFormatHandler::resolveLoHiRelocExpression(const AsmExpression* expr,
-                RelocType& relType, cxuint& relSectionId, uint64_t& relValue)
+                RelocType& relType, AsmSectionId& relSectionId, uint64_t& relValue)
 {
     const AsmExprTarget& target = expr->getTarget();
     const AsmExprTargetType tgtType = target.type;
@@ -114,7 +114,7 @@ bool AsmFormatHandler::resolveLoHiRelocExpression(const AsmExpression* expr,
         relOpStart = 0;
         relOpEnd = expr->toTop(ops.size()-2);
         /// evaluate second argument
-        cxuint tmpSectionId;
+        AsmSectionId tmpSectionId;
         uint64_t secondArg;
         if (!expr->evaluate(assembler, relOpEnd, ops.size()-1, secondArg, tmpSectionId))
             return false;
@@ -172,6 +172,212 @@ bool AsmFormatHandler::prepareSectionDiffsResolving()
     return false;
 }
 
+/* AsmKcodeHandler */
+
+AsmKcodeHandler::AsmKcodeHandler(Assembler& assembler) : AsmFormatHandler(assembler),
+        currentKcodeKernel(ASMKERN_GLOBAL), codeSection(ASMSECT_NONE)
+{ }
+
+void AsmKcodeHandler::restoreKcodeCurrentAllocRegs()
+{
+    if (currentKcodeKernel != ASMKERN_GLOBAL)
+    {
+        KernelBase& newKernel = getKernelBase(currentKcodeKernel);
+        assembler.isaAssembler->setAllocatedRegisters(newKernel.allocRegs,
+                            newKernel.allocRegFlags);
+    }
+}
+
+void AsmKcodeHandler::saveKcodeCurrentAllocRegs()
+{
+    if (currentKcodeKernel != ASMKERN_GLOBAL)
+    {
+        // save other state
+        size_t regTypesNum;
+        KernelBase& oldKernel = getKernelBase(currentKcodeKernel);
+        const cxuint* regs = assembler.isaAssembler->getAllocatedRegisters(
+                            regTypesNum, oldKernel.allocRegFlags);
+        std::copy(regs, regs+regTypesNum, oldKernel.allocRegs);
+    }
+}
+
+void AsmKcodeHandler::prepareKcodeState()
+{
+    if (assembler.isaAssembler!=nullptr)
+    {
+        // make last kernel registers pool updates
+        if (kcodeSelStack.empty())
+            saveKcodeCurrentAllocRegs();
+        else
+            while (!kcodeSelStack.empty())
+            {
+                // pop from kcode stack and apply changes
+                AsmKcodePseudoOps::updateKCodeSel(*this, kcodeSelection);
+                kcodeSelection = kcodeSelStack.top();
+                kcodeSelStack.pop();
+            }
+    }
+}
+
+void AsmKcodeHandler::handleLabel(const CString& label)
+{
+    if (assembler.sections[assembler.currentSection].type != AsmSectionType::CODE)
+        return;
+    auto kit = assembler.kernelMap.find(label);
+    if (kit == assembler.kernelMap.end())
+        return;
+    if (!kcodeSelection.empty())
+        return; // do not change if inside kcode
+    // add code start
+    assembler.sections[assembler.currentSection].addCodeFlowEntry({
+                    size_t(assembler.currentOutPos), 0, AsmCodeFlowType::START });
+    // save other state
+    saveKcodeCurrentAllocRegs();
+    if (currentKcodeKernel != ASMKERN_GLOBAL)
+        assembler.kernels[currentKcodeKernel].closeCodeRegion(
+                        assembler.sections[codeSection].content.size());
+    // restore this state
+    currentKcodeKernel = kit->second;
+    restoreKcodeCurrentAllocRegs();
+    if (currentKcodeKernel != ASMKERN_GLOBAL)
+        assembler.kernels[currentKcodeKernel].openCodeRegion(
+                        assembler.sections[codeSection].content.size());
+}
+
+/* AsmKcodePseudoOps */
+
+/* update kernel code selection, join all regallocation and store to
+ * current kernel regalloc */
+void AsmKcodePseudoOps::updateKCodeSel(AsmKcodeHandler& handler,
+                    const std::vector<AsmKernelId>& oldset)
+{
+    Assembler& asmr = handler.assembler;
+    // old elements - join current regstate with all them
+    size_t regTypesNum;
+    for (auto it = oldset.begin(); it != oldset.end(); ++it)
+    {
+        Flags curAllocRegFlags;
+        const cxuint* curAllocRegs = asmr.isaAssembler->getAllocatedRegisters(regTypesNum,
+                               curAllocRegFlags);
+        cxuint newAllocRegs[MAX_REGTYPES_NUM];
+        AsmKcodeHandler::KernelBase& kernel = handler.getKernelBase(*it);
+        for (size_t i = 0; i < regTypesNum; i++)
+            newAllocRegs[i] = std::max(curAllocRegs[i], kernel.allocRegs[i]);
+        kernel.allocRegFlags |= curAllocRegFlags;
+        std::copy(newAllocRegs, newAllocRegs+regTypesNum, kernel.allocRegs);
+    }
+    asmr.isaAssembler->setAllocatedRegisters();
+}
+
+void AsmKcodePseudoOps::doKCode(AsmKcodeHandler& handler, const char* pseudoOpPlace,
+                    const char* linePtr)
+{
+    Assembler& asmr = handler.assembler;
+    const char* end = asmr.line + asmr.lineSize;
+    bool good = true;
+    skipSpacesToEnd(linePtr, end);
+    if (linePtr==end)
+        return;
+    std::unordered_set<AsmKernelId> newSel(handler.kcodeSelection.begin(),
+                          handler.kcodeSelection.end());
+    do {
+        CString kname;
+        const char* knamePlace = linePtr;
+        skipSpacesToEnd(linePtr, end);
+        bool removeKernel = false;
+        if (linePtr!=end && *linePtr=='-')
+        {
+            // '-' - remove this kernel from current kernel selection
+            removeKernel = true;
+            linePtr++;
+        }
+        else if (linePtr!=end && *linePtr=='+')
+        {
+            linePtr++;
+            skipSpacesToEnd(linePtr, end);
+            if (linePtr==end)
+            {
+                // add all kernels
+                const AsmKernelId kernelsNum = handler.getKernelsNum();
+                for (AsmKernelId k = 0; k < kernelsNum; k++)
+                    newSel.insert(k);
+                break;
+            }
+        }
+        
+        if (!getNameArg(asmr, kname, linePtr, "kernel"))
+        { good = false; continue; }
+        auto kit = asmr.kernelMap.find(kname);
+        if (kit == asmr.kernelMap.end())
+        {
+            asmr.printError(knamePlace, "Kernel not found");
+            continue;
+        }
+        if (!removeKernel)
+            newSel.insert(kit->second);
+        else // remove kernel
+            newSel.erase(kit->second);
+    } while (skipCommaForMultipleArgs(asmr, linePtr));
+    
+    if (!good || !checkGarbagesAtEnd(asmr, linePtr))
+        return;
+    
+    if (!handler.isCodeSection())
+        PSEUDOOP_RETURN_BY_ERROR("KCode outside code")
+    if (handler.kcodeSelStack.empty())
+        handler.saveKcodeCurrentAllocRegs();
+    // push to stack
+    handler.kcodeSelStack.push(handler.kcodeSelection);
+    // set current sel
+    handler.kcodeSelection.assign(newSel.begin(), newSel.end());
+    std::sort(handler.kcodeSelection.begin(), handler.kcodeSelection.end());
+    
+    const std::vector<AsmKernelId>& oldKCodeSel = handler.kcodeSelStack.top();
+    if (!oldKCodeSel.empty())
+        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
+                            handler.codeSection);
+    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
+    {
+        std::vector<AsmKernelId> tempKCodeSel;
+        tempKCodeSel.push_back(handler.currentKcodeKernel);
+        asmr.handleRegionsOnKernels(handler.kcodeSelection, tempKCodeSel,
+                            handler.codeSection);
+    }
+    
+    updateKCodeSel(handler, handler.kcodeSelStack.top());
+}
+
+void AsmKcodePseudoOps::doKCodeEnd(AsmKcodeHandler& handler, const char* pseudoOpPlace,
+                    const char* linePtr)
+{
+    Assembler& asmr = handler.assembler;
+    if (!handler.isCodeSection())
+        PSEUDOOP_RETURN_BY_ERROR("KCodeEnd outside code")
+    if (handler.kcodeSelStack.empty())
+        PSEUDOOP_RETURN_BY_ERROR("'.kcodeend' without '.kcode'")
+    if (!checkGarbagesAtEnd(asmr, linePtr))
+        return;
+    
+    updateKCodeSel(handler, handler.kcodeSelection);
+    std::vector<AsmKernelId> oldKCodeSel = handler.kcodeSelection;
+    handler.kcodeSelection = handler.kcodeSelStack.top();
+    
+    if (!handler.kcodeSelection.empty())
+        asmr.handleRegionsOnKernels(handler.kcodeSelection, oldKCodeSel,
+                        handler.codeSection);
+    else if (handler.currentKcodeKernel != ASMKERN_GLOBAL)
+    {
+        // if choosen current kernel
+        std::vector<AsmKernelId> curKernelSel;
+        curKernelSel.push_back(handler.currentKcodeKernel);
+        asmr.handleRegionsOnKernels(curKernelSel, oldKCodeSel, handler.codeSection);
+    }
+    
+    handler.kcodeSelStack.pop();
+    if (handler.kcodeSelStack.empty())
+        handler.restoreKcodeCurrentAllocRegs();
+}
+
 /* raw code handler */
 
 AsmRawCodeHandler::AsmRawCodeHandler(Assembler& assembler): AsmFormatHandler(assembler)
@@ -180,12 +386,12 @@ AsmRawCodeHandler::AsmRawCodeHandler(Assembler& assembler): AsmFormatHandler(ass
     assembler.currentSection = 0;
 }
 
-cxuint AsmRawCodeHandler::addKernel(const char* kernelName)
+AsmKernelId AsmRawCodeHandler::addKernel(const char* kernelName)
 {
     throw AsmFormatException("In rawcode defining kernels is not allowed");
 }
 
-cxuint AsmRawCodeHandler::addSection(const char* name, cxuint kernelId)
+AsmSectionId AsmRawCodeHandler::addSection(const char* name, AsmKernelId kernelId)
 {
     if (::strcmp(name, ".text")!=0)
         throw AsmFormatException("Only section '.text' can be in raw code");
@@ -193,24 +399,25 @@ cxuint AsmRawCodeHandler::addSection(const char* name, cxuint kernelId)
         throw AsmFormatException("Section '.text' already exists");
 }
 
-cxuint AsmRawCodeHandler::getSectionId(const char* sectionName) const
+AsmSectionId AsmRawCodeHandler::getSectionId(const char* sectionName) const
 {
     return ::strcmp(sectionName, ".text") ? ASMSECT_NONE : 0;
 }
 
-void AsmRawCodeHandler::setCurrentKernel(cxuint kernel)
+void AsmRawCodeHandler::setCurrentKernel(AsmKernelId kernel)
 {
     if (kernel != ASMKERN_GLOBAL)
         throw AsmFormatException("No kernels available");
 }
 
-void AsmRawCodeHandler::setCurrentSection(cxuint sectionId)
+void AsmRawCodeHandler::setCurrentSection(AsmSectionId sectionId)
 {
     if (sectionId!=0)
         throw AsmFormatException("Section doesn't exists");
 }
 
-AsmFormatHandler::SectionInfo AsmRawCodeHandler::getSectionInfo(cxuint sectionId) const
+AsmFormatHandler::SectionInfo AsmRawCodeHandler::getSectionInfo(
+                                AsmSectionId sectionId) const
 {
     if (sectionId!=0)
         throw AsmFormatException("Section doesn't exists");

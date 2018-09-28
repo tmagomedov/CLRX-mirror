@@ -70,9 +70,11 @@ enum: Flags
     DISASM_BUGGYFPLIT = 0x100,
     DISASM_CODEPOS = 0x200,   ///< print code position
     DISASM_HSACONFIG = 0x400,  ///< print HSA configuration
+    DISASM_HSALAYOUT = 0x800,  ///< print in HSA layout (like Gallium or ROCm)
     
     ///< all disassembler flags (without config)
-    DISASM_ALL = FLAGS_ALL&(~(DISASM_CONFIG|DISASM_BUGGYFPLIT|DISASM_HSACONFIG))
+    DISASM_ALL = FLAGS_ALL&(~(DISASM_CONFIG|DISASM_BUGGYFPLIT|
+                    DISASM_HSACONFIG|DISASM_HSALAYOUT))
 };
 
 struct GCNDisasmUtils;
@@ -285,6 +287,9 @@ struct AmdCL2DisasmInput
     size_t bssSize;         ///< size of global bss section
     size_t samplerInitSize;     ///< sampler init data size
     const cxbyte* samplerInit;  ///< sampler init data
+    size_t codeSize;            ///< code size
+    const cxbyte* code;         ///< code
+    std::vector<AmdCL2RelaEntry> textRelocs;    ///< text relocations
     
     /// sampler relocations
     std::vector<std::pair<size_t, size_t> > samplerRelocs;
@@ -306,7 +311,7 @@ struct ROCmDisasmRegionInput
     CString regionName; ///< region name
     size_t size;    ///< region size
     size_t offset;  ///< region offset in code
-    ROCmRegionType type ;  ///< type
+    ROCmRegionType type;  ///< type
 };
 
 /// disasm ROCm input
@@ -515,10 +520,12 @@ extern AmdDisasmInput* getAmdDisasmInputFromBinary64(
             const AmdMainGPUBinary64& binary, Flags flags);
 /// prepare AMD OpenCL 2.0 input from AMD 32-bit binary
 extern AmdCL2DisasmInput* getAmdCL2DisasmInputFromBinary32(
-            const AmdCL2MainGPUBinary32& binary, cxuint driverVersion);
+            const AmdCL2MainGPUBinary32& binary, cxuint driverVersion,
+            bool hsaLayout = false);
 /// prepare AMD OpenCL 2.0 input from AMD 64-bit binary
 extern AmdCL2DisasmInput* getAmdCL2DisasmInputFromBinary64(
-            const AmdCL2MainGPUBinary64& binary, cxuint driverVersion);
+            const AmdCL2MainGPUBinary64& binary, cxuint driverVersion,
+            bool hsaLayout = false);
 /// prepare ROCM input from ROCM binary
 extern ROCmDisasmInput* getROCmDisasmInputFromBinary(
             const ROCmBinary& binary);

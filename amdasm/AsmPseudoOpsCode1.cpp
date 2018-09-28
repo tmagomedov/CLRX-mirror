@@ -130,13 +130,13 @@ void AsmPseudoOps::setGPUArchitecture(Assembler& asmr, const char* linePtr)
 {
     const char* end = asmr.line + asmr.lineSize;
     skipSpacesToEnd(linePtr, end);
-    char deviceName[64];
+    char archName[64];
     const char* archNamePlace = linePtr;
-    if (!getNameArg(asmr, 64, deviceName, linePtr, "GPU architecture name"))
+    if (!getNameArg(asmr, 64, archName, linePtr, "GPU architecture name"))
         return;
     try
     {
-        GPUArchitecture arch = getGPUArchitectureFromName(deviceName);
+        GPUArchitecture arch = getGPUArchitectureFromName(archName);
         GPUDeviceType deviceType = getLowestGPUDeviceTypeFromArchitecture(arch);
         if (checkGarbagesAtEnd(asmr, linePtr))
             // set if no garbages at end
@@ -564,7 +564,7 @@ void AsmPseudoOps::putIntegers(Assembler& asmr, const char* pseudoOpPlace,
             else if (expr->getSymOccursNum()==0)
             {
                 // put directly to section
-                cxuint sectionId;
+                AsmSectionId sectionId;
                 AsmTryStatus  evalStatus = expr->tryEvaluate(asmr, value, sectionId,
                                         asmr.withSectionDiffs());
                 if (evalStatus == AsmTryStatus::SUCCESS)
@@ -1149,7 +1149,7 @@ void AsmPseudoOps::doOrganize(Assembler& asmr, const char* linePtr)
     const char* end = asmr.line + asmr.lineSize;
     skipSpacesToEnd(linePtr, end);
     uint64_t value;
-    cxuint sectionId = ASMSECT_ABS;
+    AsmSectionId sectionId = ASMSECT_ABS;
     const char* valuePlace = linePtr;
     bool good = getAnyValueArg(asmr, value, sectionId, linePtr);
     
@@ -1415,7 +1415,8 @@ void AsmPseudoOps::doIfArch(Assembler& asmr, const char* pseudoOpPlace,
             AsmClauseType::IF;
     bool included;
     GPUArchitecture curArch = getGPUArchitectureFromDeviceType(asmr.getDeviceType());
-    bool satisfied = (!negation) ? arch==curArch : arch!=curArch;
+    const bool isThisArch = isThisGPUArchitecture(arch, curArch);
+    bool satisfied = (!negation) ? isThisArch : !isThisArch;
     if (asmr.pushClause(pseudoOpPlace, clauseType, satisfied, included))
     {   // 
         if (!included) // skip clauses (do not perform statements)
@@ -1777,7 +1778,7 @@ void AsmPseudoOps::doFor(Assembler& asmr, const char* pseudoOpPlace, const char*
         ASM_NOTGOOD_BY_ERROR(linePtr, "Expected '='")
     skipCharAndSpacesToEnd(linePtr, end);
     uint64_t value = 0;
-    cxuint sectionId = ASMSECT_ABS;
+    AsmSectionId sectionId = ASMSECT_ABS;
     good &= AsmParseUtils::getAnyValueArg(asmr, value, sectionId, linePtr);
     if (good)
     {
@@ -1968,12 +1969,11 @@ void AsmPseudoOps::doUseReg(Assembler& asmr, const char* linePtr)
             // create usageHandler if needed
             if (asmr.sections[asmr.currentSection].usageHandler == nullptr)
                     asmr.sections[asmr.currentSection].usageHandler.reset(
-                            asmr.isaAssembler->createUsageHandler(
-                                    asmr.sections[asmr.currentSection].content));
+                            asmr.isaAssembler->createUsageHandler());
             // put regVar usage
-            asmr.sections[asmr.currentSection].usageHandler->pushUseRegUsage(
-                AsmRegVarUsage{ size_t(asmr.currentOutPos), regVar,
-                    uint16_t(regStart), uint16_t(regEnd), ASMFIELD_NONE, rwFlags, 0 });
+            asmr.sections[asmr.currentSection].usageHandler->pushUsage(
+                AsmRegVarUsage{ size_t(asmr.currentOutPos), regVar, uint16_t(regStart),
+                    uint16_t(regEnd), ASMFIELD_NONE, rwFlags, 0, true });
         }
         
     } while(skipCommaForMultipleArgs(asmr, linePtr));

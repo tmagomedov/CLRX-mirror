@@ -48,274 +48,89 @@ std::ostream& operator<<(std::ostream& os, const CLRX::BlockIndex& v)
 }
 #endif
 
-/*
- * instrStruct format:
- * 0x81-0xff - skip offset by (byte&0x7f)-defaultInstrSize
- *       (defaultInstrSize if no userusage)
- * 0x80 - begin use reg mode usage
- *   next byte is number of use reg usages in this place
- *   next bytes - bitmask for regusage (1 - regvarusage, 0 - regusage)
- * 0x00-0x7f - argFlags (bit reflect whether argument is regvarusage or regusage)
- */
-
-ISAUsageHandler::ISAUsageHandler(const std::vector<cxbyte>& _content) :
-            content(_content), lastOffset(0), readOffset(0), instrStructPos(0),
-            regVarUsagesPos(0), pushedArgs(0), argPos(0), argFlags(0),
-            isNext(false), useRegMode(false)
+ISAUsageHandler::ISAUsageHandler()
 { }
 
 ISAUsageHandler::~ISAUsageHandler()
 { }
 
-void ISAUsageHandler::rewind()
-{
-    readOffset = instrStructPos = 0;
-    regVarUsagesPos = 0;
-    useRegMode = false;
-    pushedArgs = 0;
-    skipBytesInInstrStruct();
-}
-
-void ISAUsageHandler::skipBytesInInstrStruct()
-{
-    // do not add instruction size if usereg (usereg immediately before instr regusages)
-    if ((instrStructPos != 0 || argPos != 0) && !useRegMode)
-        readOffset += defaultInstrSize;
-    argPos = 0;
-    for (;instrStructPos < instrStruct.size() &&
-        instrStruct[instrStructPos] > 0x80; instrStructPos++)
-        readOffset += (instrStruct[instrStructPos] & 0x7f);
-    isNext = (instrStructPos < instrStruct.size());
-}
-
-void ISAUsageHandler::putSpace(size_t offset)
-{
-    if (lastOffset != offset)
-    {
-        flush(); // flush before new instruction
-        // useReg immediately before instruction regusages
-        size_t defaultInstrSize = (!useRegMode ? this->defaultInstrSize : 0);
-        if (lastOffset > offset)
-            throw AsmException("Offset before previous instruction");
-        if (!instrStruct.empty() && offset - lastOffset < defaultInstrSize)
-            throw AsmException("Offset between previous instruction");
-        size_t toSkip = !instrStruct.empty() ? 
-                offset - lastOffset - defaultInstrSize : offset;
-        while (toSkip > 0)
-        {
-            size_t skipped = std::min(toSkip, size_t(0x7f));
-            instrStruct.push_back(skipped | 0x80);
-            toSkip -= skipped;
-        }
-        lastOffset = offset;
-        argFlags = 0;
-        pushedArgs = 0;
-    } 
-}
-
-template<typename T>
-static inline void appendToByteVec(std::vector<cxbyte>& out, const T& obj)
-{
-    size_t p = out.size();
-    out.resize(p + sizeof(T));
-    memcpy(out.data()+p, &obj, sizeof(T));
-}
-
 void ISAUsageHandler::pushUsage(const AsmRegVarUsage& rvu)
 {
-    if (lastOffset == rvu.offset && useRegMode)
-        flush(); // only flush if useRegMode and no change in offset
-    else // otherwise
-        putSpace(rvu.offset);
-    useRegMode = false;
-    if (rvu.regVar != nullptr)
+    if (!chunks.empty())
     {
-        argFlags |= (1U<<pushedArgs);
-        appendToByteVec(regVarUsages, RegVarUsageInt{ rvu.regVar, rvu.rstart, rvu.rend,
-                    rvu.regField, rvu.rwFlags, rvu.align });
-    }
-    else // reg usages
-        appendToByteVec(regVarUsages, RegUsageInt{ rvu.regField, cxbyte(rvu.rwFlags |
-                    getRwFlags(rvu.regField, rvu.rstart, rvu.rend)) });
-    pushedArgs++;
-}
-
-void ISAUsageHandler::pushUseRegUsage(const AsmRegVarUsage& rvu)
-{
-    if (lastOffset == rvu.offset && !useRegMode)
-        flush(); // only flush if useRegMode and no change in offset
-    else // otherwise
-        putSpace(rvu.offset);
-    useRegMode = true;
-    if (pushedArgs == 0 || pushedArgs == 256)
-    {
-        argFlags = 0;
-        pushedArgs = 0;
-        instrStruct.push_back(0x80); // sign of regvarusage from usereg
-        instrStruct.push_back(0);
-    }
-    if (rvu.regVar != nullptr)
-    {
-        argFlags |= (1U<<(pushedArgs & 7));
-        appendToByteVec(regVarUsages,
-                RegVarUsageInt{ rvu.regVar, rvu.rstart, rvu.rend, rvu.regField,
-                    rvu.rwFlags, rvu.align });
-    }
-    else // reg usages
-        appendToByteVec(regVarUsages, RegUsage2Int{ rvu.rstart, rvu.rend, rvu.rwFlags });
-    
-    pushedArgs++;
-    if ((pushedArgs & 7) == 0) // just flush per 8 bit
-    {
-        instrStruct.push_back(argFlags);
-        instrStruct[instrStruct.size() - ((pushedArgs+7) >> 3) - 1] = pushedArgs;
-        argFlags = 0;
-    }
-}
-
-void ISAUsageHandler::flush()
-{
-    if (pushedArgs != 0)
-    {
-        if (!useRegMode)
-        {
-            // normal regvarusages
-            instrStruct.push_back(argFlags);
-            if ((argFlags & (1U<<(pushedArgs-1))) != 0)
-                // enable 7 bit in rwFlags of previous regVarUsage entry
-                regVarUsages[regVarUsages.size() - sizeof(RegVarUsageInt) +
-                        offsetof(RegVarUsageInt, rwFlags)] |= 0x80;
-            else // reg usages
-                // enable 7 bit in rwFlags of previous regUsage entry
-                regVarUsages[regVarUsages.size() - sizeof(RegUsageInt) +
-                        offsetof(RegUsageInt, rwFlags)] |= 0x80;
-        }
-        else
-        {
-            // use reg regvarusages
-            if ((pushedArgs & 7) != 0) //if only not pushed args remains
-                instrStruct.push_back(argFlags);
-            instrStruct[instrStruct.size() - ((pushedArgs+7) >> 3) - 1] = pushedArgs;
-        }
-        argFlags = 0;
-        pushedArgs = 0;
-    }
-}
-
-template<typename T>
-static inline T getObjFromVecByte(size_t& pos, const std::vector<cxbyte>& in)
-{
-    T out;
-    memcpy(&out, in.data() + pos, sizeof(T));
-    pos += sizeof(T);
-    return out;
-}
-
-AsmRegVarUsage ISAUsageHandler::nextUsage()
-{
-    if (!isNext)
-        throw AsmException("No reg usage in this code");
-    AsmRegVarUsage rvu;
-    // get regvarusage
-    bool lastRegUsage = false;
-    rvu.offset = readOffset;
-    if (!useRegMode && instrStruct[instrStructPos] == 0x80)
-    {
-        // useRegMode (begin fetching useregs)
-        useRegMode = true;
-        argPos = 0;
-        instrStructPos++;
-        // pushedArgs - numer of useregs, 0 - 256 useregs
-        pushedArgs = instrStruct[instrStructPos++];
-        argFlags = instrStruct[instrStructPos];
-    }
-    rvu.useRegMode = useRegMode; // no ArgPos
-    
-    if ((instrStruct[instrStructPos] & (1U << (argPos&7))) != 0)
-    {
-        // regvar usage
-        const RegVarUsageInt inRVU = getObjFromVecByte<RegVarUsageInt>(
-                        regVarUsagesPos, regVarUsages);
-        rvu.regVar = inRVU.regVar;
-        rvu.rstart = inRVU.rstart;
-        rvu.rend = inRVU.rend;
-        rvu.regField = inRVU.regField;
-        rvu.rwFlags = inRVU.rwFlags & ASMRVU_ACCESS_MASK;
-        rvu.align = inRVU.align;
-        if (!useRegMode)
-            lastRegUsage = ((inRVU.rwFlags&0x80) != 0);
-    }
-    else if (!useRegMode)
-    {
-        // simple reg usage
-        const RegUsageInt inRU = getObjFromVecByte<RegUsageInt>(
-                        regVarUsagesPos, regVarUsages);
-        rvu.regVar = nullptr;
-        const std::pair<uint16_t, uint16_t> regPair =
-                    getRegPair(inRU.regField, inRU.rwFlags);
-        rvu.rstart = regPair.first;
-        rvu.rend = regPair.second;
-        rvu.rwFlags = (inRU.rwFlags & ASMRVU_ACCESS_MASK);
-        rvu.regField = inRU.regField;
-        rvu.align = 0;
-        lastRegUsage = ((inRU.rwFlags&0x80) != 0);
+        const Chunk& last = chunks.back();
+        
+        if ((last.offsetFirst & ~size_t(0xffff)) != (rvu.offset & ~size_t(0xffff)))
+            // add new chunk
+            chunks.push_back(Chunk{ rvu.offset });
     }
     else
+        chunks.push_back(Chunk{ rvu.offset });
+    
+    const cxbyte align = rvu.align!=0 ? 32-CLZ32(rvu.align) : 0;
+    chunks.back().items.push_back(RegVarUsageInt{ rvu.regVar, rvu.rstart, rvu.rend, 
+                rvu.regField, rvu.rwFlags, align, rvu.useRegMode,
+                uint16_t(rvu.offset & 0xffffU) });
+}
+
+AsmRegVarUsage ISAUsageHandler::nextUsage(ReadPos& readPos)
+{
+    const Chunk& chunk = chunks[readPos.chunkPos];
+    const RegVarUsageInt& item = chunk.items[readPos.itemPos];
+    readPos.itemPos++;
+    // fix itemPos to zero
+    if (readPos.itemPos >= chunk.items.size())
     {
-        // use reg (simple reg usage, second structure)
-        const RegUsage2Int inRU = getObjFromVecByte<RegUsage2Int>(
-                        regVarUsagesPos, regVarUsages);
-        rvu.regVar = nullptr;
-        rvu.rstart = inRU.rstart;
-        rvu.rend = inRU.rend;
-        rvu.rwFlags = inRU.rwFlags;
-        rvu.regField = ASMFIELD_NONE;
-        rvu.align = 0;
+        readPos.itemPos = 0;
+        readPos.chunkPos++;
     }
-    argPos++;
-    if (useRegMode)
+    const cxbyte outAlign = item.align!=0 ? 1U<<(item.align-1) : 0;
+    return AsmRegVarUsage{ (chunk.offsetFirst & ~size_t(0xffffU)) | item.offsetLo,
+            item.regVar, item.rstart, item.rend, item.regField, item.rwFlags,
+            cxbyte(outAlign), item.useRegMode!=0 };
+}
+
+ISAUsageHandler::ReadPos ISAUsageHandler::findPositionByOffset(size_t offset) const
+{
+    if (chunks.empty())
+        return ReadPos{ 0, 0 };
+    size_t chunkPos = std::lower_bound(chunks.begin(), chunks.end(), Chunk{ offset },
+            [](const Chunk& a, const Chunk& b)
+            { return a.offsetFirst < b.offsetFirst; }) - chunks.begin();
+    // fix - move back if found offset is greater or if end
+    if (chunkPos == chunks.size() ||
+        (chunkPos != 0 && chunks[chunkPos].offsetFirst != offset))
+        chunkPos--;
+    
+    size_t itemPos = 0;
+    if (chunks[chunkPos].offsetFirst != offset)
     {
-        // if inside useregs
-        if (argPos == (pushedArgs&0xff))
+        const std::vector<RegVarUsageInt>& items = chunks[chunkPos].items;
+        RegVarUsageInt rvu;
+        rvu.offsetLo = uint16_t(offset & 0xffff);
+        size_t itemPos = std::lower_bound(items.begin(), items.end(), rvu,
+                [](const RegVarUsageInt& a, const RegVarUsageInt& b)
+                { return a.offsetLo < b.offsetLo; }) - items.begin();
+        // fix itemPos to zero
+        if (itemPos >= items.size())
         {
-            instrStructPos++; // end
-            skipBytesInInstrStruct();
-            useRegMode = false;
-        }
-        else if ((argPos & 7) == 0) // fetch new flag
-        {
-            instrStructPos++;
-            argFlags = instrStruct[instrStructPos];
+            chunkPos++;
+            itemPos = 0;
         }
     }
-    // after instr
-    if (lastRegUsage)
-    {
-        instrStructPos++;
-        skipBytesInInstrStruct();
-    }
-    return rvu;
+    return ReadPos{ chunkPos, itemPos };
 }
 
 
-ISALinearDepHandler::ISALinearDepHandler() : regVarLinDepsPos(0)
+ISALinearDepHandler::ISALinearDepHandler()
 { }
 
-void ISALinearDepHandler::pushLinearDep(const AsmRegVarLinearDep& linearDep)
+size_t ISALinearDepHandler::findPositionByOffset(size_t offset) const
 {
-    regVarLinDeps.push_back(linearDep);
-}
-
-void ISALinearDepHandler::rewind()
-{
-    regVarLinDepsPos = 0;
-}
-
-AsmRegVarLinearDep ISALinearDepHandler::nextLinearDep()
-{
-    if (regVarLinDepsPos >= regVarLinDeps.size())
-        throw AsmException("No regvar linear deps in this code");
-    return regVarLinDeps[regVarLinDepsPos++];
+    return std::lower_bound(regVarLinDeps.begin(), regVarLinDeps.end(),
+            AsmRegVarLinearDep{offset},
+            [](const AsmRegVarLinearDep& a, const AsmRegVarLinearDep& b)
+            { return a.offset < b.offset; }) - regVarLinDeps.begin();
 }
 
 ISALinearDepHandler* ISALinearDepHandler::copy() const
@@ -911,7 +726,7 @@ void AsmRegAllocator::colorInterferenceGraph()
     }
 }
 
-void AsmRegAllocator::allocateRegisters(cxuint sectionId)
+void AsmRegAllocator::allocateRegisters(AsmSectionId sectionId)
 {
     // before any operation, clear all
     codeBlocks.clear();

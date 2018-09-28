@@ -25,12 +25,17 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "    s_add_u32  s21, s4, s61", 0x80153d04U, 0, false, true, "" },
     /* registers and literals */
     { "    s_add_u32  vcc_lo, s4, s61", 0x806a3d04U, 0, false, true, "" },
+    { "    s_add_u32  vcc[0:0], s4, s61", 0x806a3d04U, 0, false, true, "" },
+    { "    s_add_u32  vcc[0], s4, s61", 0x806a3d04U, 0, false, true, "" },
     { "    s_add_u32  vcc_hi, s4, s61", 0x806b3d04U, 0, false, true, "" },
+    { "    s_add_u32  vcc[1:1], s4, s61", 0x806b3d04U, 0, false, true, "" },
+    { "    s_add_u32  vcc[1], s4, s61", 0x806b3d04U, 0, false, true, "" },
     { "    s_add_u32  tba_lo, s4, s61", 0x806c3d04U, 0, false, true, "" },
     { "    s_add_u32  tba_hi, s4, s61", 0x806d3d04U, 0, false, true, "" },
     { "    s_add_u32  tma_lo, s4, s61", 0x806e3d04U, 0, false, true, "" },
     { "    s_add_u32  tma_hi, s4, s61", 0x806f3d04U, 0, false, true, "" },
     { "    s_add_u32  m0, s4, s61", 0x807c3d04U, 0, false, true, "" },
+    { "mymx=%m0 ; s_add_u32  mymx, s4, s61", 0x807c3d04U, 0, false, true, "" },
     { "    s_add_u32  ttmp0, s4, s61", 0x80703d04U, 0, false, true, "" },
     { "    s_add_u32  ttmp1, s4, s61", 0x80713d04U, 0, false, true, "" },
     { "    s_add_u32  ttmp[2:2], s4, s61", 0x80723d04U, 0, false, true, "" },
@@ -46,12 +51,20 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
         "s_add_u32  zx[1], ss, b[4]", 0x80153d04U, 0, false, true, "" },
     { "zx=%s[20:23]; ss=%execz; b=%s[57:67];s_add_u32  zx[1], ss, b[4]",
             0x80153dfcU, 0, false, true, "" },
+    { "xrg=%32; s_add_u32  xrg, s4, s61", 0, 0, false, false,
+        "test.s:1:21: Error: Expected 1 scalar register\n" },
+    { "x1=%s[0:11]; x2=%x1[4]; s_add_u32  s[21:21], x2, s61",
+        0x80153d04U, 0, false, true, "" },
+    { "v=%s[20:23]; s=%s4; b=%s[57:67];s_add_u32  v[1], s, b[4]",
+            0x80153d04U, 0, false, true, "" },
     /* symregranges with names of other registers (vcc,exec,...) */
     { "execmi=%s[20:23]; vcctf=%s4; tmad=%s[57:67];s_add_u32  execmi[1], vcctf, tmad[4]",
             0x80153d04U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, 0", 0x80158004U, 0, false, true, "" },
     { "lit=3;s_add_u32  s21, s4, lit*5", 0x80158f04U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, 1", 0x80158104U, 0, false, true, "" },
+    { "  dreg=%1 ; s_add_u32  s21, s4, dreg", 0x80158104U, 0, false, true, "" },
+    { "  dreg=%1 ; s_add_u32  s21, s4, dreg[0]", 0x80158104U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, 0x2a", 0x8015aa04U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, -7", 0x8015c704U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, lit(-7)", 0x8015ff04U, 0xfffffff9, true, true, "" },
@@ -69,6 +82,7 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "    s_add_u32  s21, s4, lit  ( 2.0 )", 0x8015ff04U, 0x40000000, true, true, "" },
     { "    s_add_u32_e64  s21, s4, 2.0", 0x8015ff04U, 0x40000000, true, true, "" },
     { "    s_add_u32  s21, scc, s61", 0x80153dfdU, 0, false, true, "" },
+    { " vreg=%scc; s_add_u32  s21, vreg, s61", 0x80153dfdU, 0, false, true, "" },
     { "    s_add_u32  s21, src_scc, s61", 0x80153dfdU, 0, false, true, "" },
     { "    s_add_u32  s21, execz, s61", 0x80153dfcU, 0, false, true, "" },
     { "    s_add_u32  s21, src_execz, s61", 0x80153dfcU, 0, false, true, "" },
@@ -89,6 +103,9 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { ".5=0x2b;    s_add_u32       s21, s4, @.5", 0x8015ab04U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, .5", 0x8015f004U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, -.5", 0x8015f104U, 0, false, true, "" },
+    { "val=%0.5; s_add_u32  s21, s4, val", 0x8015f004U, 0, false, true, "" },
+    { "val=%.5; s_add_u32  s21, s4, val", 0x8015f004U, 0, false, true, "" },
+    { "val=%-.5; s_add_u32  s21, s4, val", 0x8015f104U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, 1.", 0x8015f204U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, -1.", 0x8015f304U, 0, false, true, "" },
     { "    s_add_u32  s21, s4, 2.", 0x8015f404U, 0, false, true, "" },
@@ -106,13 +123,37 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "s1=22; s2=4;s3=62;s_xor_b64 s[s1:s1+1], s[s2:s2+1], s[s3:s3+1]\n",
         0x89963e04U, 0, false, true, "" },
     { "    s_xor_b64 vcc, s[4:5], s[62:63]\n", 0x89ea3e04U, 0, false, true, "" },
+    { "    s_xor_b64 vcc[0:1], s[4:5], s[62:63]\n", 0x89ea3e04U, 0, false, true, "" },
+    { "myvcc=%vcc ; s_xor_b64 myvcc, s[4:5], s[62:63]\n", 0x89ea3e04U, 0, false, true, "" },
     { "    s_xor_b64 tba, s[4:5], s[62:63]\n", 0x89ec3e04U, 0, false, true, "" },
     { "    s_xor_b64 tma, s[4:5], s[62:63]\n", 0x89ee3e04U, 0, false, true, "" },
     { "    s_xor_b64 ttmp[4:5], s[4:5], s[62:63]\n", 0x89f43e04U, 0, false, true, "" },
+    { " dreg=%ttmp[0:11] ;  s_xor_b64 dreg[4:5], s[4:5], s[62:63]\n",
+                0x89f43e04U, 0, false, true, "" },
+    { " dreg=%ttmp[0:10] ;  s_xor_b64 dreg[4:5], s[4:5], s[62:63]\n",
+                0x89f43e04U, 0, false, true, "" },
+    { "dreg=%ttmp ;  s_xor_b64 dreg[4:5], s[4:5], s[62:63]\n", 0, 0, false, false,
+                "test.s:1:7: Error: Only one literal can be used in instruction\n"
+                "test.s:1:25: Error: Expected 2 scalar registers\n"
+                "test.s:1:29: Error: Expected ',' before argument\n" },
+    { " dreg=%12 ;  s_xor_b64 dreg, s[4:5], s[62:63]\n", 0, 0, false, false,
+        "test.s:1:24: Error: Expected 2 scalar registers\n" },
     { "    s_xor_b64 exec, s[4:5], s[62:63]\n", 0x89fe3e04U, 0, false, true, "" },
     { "    s_xor_b64 exec, s[4:5], 4000\n", 0x89feff04U, 4000, true, true, "" },
     { "    s_xor_b64 s[22:23], 0x2e, s[62:63]\n", 0x89963eaeU, 0, false, true, "" },
     { "    s_xor_b64 s[22:23], -12, s[62:63]\n", 0x89963eccU, 0, false, true, "" },
+    { " dreg=%-12; s_xor_b64 s[22:23], dreg, s[62:63]\n", 0x89963eccU, 0, false, true, "" },
+    { " dreg=%-12; s_xor_b64 s[22:23], dreg[0:1], s[62:63]\n",
+            0x89963eccU, 0, false, true, "" },
+    { " dreg=%-12; s_xor_b64 s[22:23], dreg[1:1], s[62:63]\n", 0, 0, false, false,
+        "test.s:1:42: Error: Register range for const "
+                "literals must be[0] or [0:regsNum-1]\n" },
+    { " dreg=%-12; s_xor_b64 s[22:23], dreg[0:2], s[62:63]\n", 0, 0, false, false,
+        "test.s:1:42: Error: Register range for const "
+                "literals must be[0] or [0:regsNum-1]\n" },
+    { " dreg=%-12; s_xor_b64 s[22:23], dreg[1:2], s[62:63]\n", 0, 0, false, false,
+        "test.s:1:42: Error: Register range for const "
+                "literals must be[0] or [0:regsNum-1]\n" },
     { "    s_xor_b64 s[22:23], 1.0, s[62:63]\n", 0x89963ef2U, 0, false, true, "" },
     { "    s_xor_b64 s[22:23], vccz, s[62:63]\n", 0x89963efbU, 0, false, true, "" },
     { "    s_xor_b64 s[22:23], execz, s[62:63]\n", 0x89963efcU, 0, false, true, "" },
@@ -183,6 +224,12 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "k=%v[10:11]; s_xor_b64  s[30:31], k, s[14:15]", 0, 0, false, false,
         "test.s:1:35: Error: Expression have register symbol\n"
         "test.s:1:35: Error: Expected ',' before argument\n" },
+    { "    s_add_u32  vcc[1:2], s4, s61", 0, 0, false, false,
+        "test.s:1:16: Error: Some doublereg number out of range (0-1)\n" },
+    { "    s_add_u32  vcc[1:1, s4, s61", 0, 0, false, false,
+        "test.s:1:16: Error: Unterminated double register range\n" },
+    { "    s_add_u32  vcc[1:0], s4, s61", 0, 0, false, false,
+        "test.s:1:16: Error: Illegal doublereg range\n" },
     /* SOP2 encodings */
     { "    s_sub_u32  s21, s4, s61", 0x80953d04U, 0, false, true, "" },
     { "    s_sub_u32_e32  s21, s4, s61", 0x80953d04U, 0, false, true, "" },
@@ -563,6 +610,10 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
         "test.s:1:21: Error: Expected 1 scalar register\n" },
     { "    s_load_dword    s50, s[59:60], 0x5b", 0, 0, false, false,
         "test.s:1:26: Error: Unaligned scalar register range\n" },
+    { "    s_load_dword    s50, -1, 0x5b", 0, 0, false, false,
+        "test.s:1:26: Error: Some garbages at register name place\n" },
+    { "    s_load_dword    s50, execz, 0x5b", 0, 0, false, false,
+        "test.s:1:26: Error: Expected 2 scalar registers\n" },
     /* VOP2/(VOP2 in VOP3) encoding */
     { "    v_cndmask_b32   v154, v21, v107, vcc", 0x0134d715U, 0, false, true, "" },
     { "    v_cndmask_b32   v154, v21, v107, vcc     ", 0x0134d715U, 0, false, true, "" },
@@ -807,6 +858,8 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "    v_subrev_u32  v55, s[10:11], s27, -v90",
         0xd24e0a37U, 0x4002b41bU, true, true, "" },
     { "    v_addc_u32  v154, vcc, v21, v107, vcc", 0x5134d715U, 0, false, true, "" },
+    { "    v_addc_u32  v154, vcc[0:1], v21, v107, vcc[0:1]",
+        0x5134d715U, 0, false, true, "" },
     { "    v_addc_u32_e32  v154, vcc, v21, v107, vcc", 0x5134d715U, 0, false, true, "" },
     { "    v_subb_u32  v154, vcc, v21, v107, vcc", 0x5334d715U, 0, false, true, "" },
     { "    v_subbrev_u32  v154, vcc, v21, v107, vcc", 0x5534d715U, 0, false, true, "" },
@@ -2233,6 +2286,22 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
     { "    buffer_load_format_x  v[61:62], s[80:83], s35 "
         "offset:603 glc slc addr64 tfe", 0, 0, false, false,
         "test.s:1:37: Error: VADDR is required if idxen, offen or addr64 is enabled\n" },
+    { "vxr=%21; buffer_load_format_x  v[61:62], v[18:19], vxr, s35 "
+        "offset:603 glc slc addr64 tfe", 0, 0, false, false,
+        "test.s:1:52: Error: Expected 4 scalar registers\n" },
+    { "vxr=%21; buffer_load_format_x  v[61:62], v[18:19], vxr[0:3], s35 "
+        "offset:603 glc slc addr64 tfe", 0, 0, false, false,
+        "test.s:1:52: Error: Expected 4 scalar registers\n"
+        "test.s:1:55: Error: Expected ',' before argument\n" },
+    { "    buffer_load_format_x  v[61:62], v[18:19], 15, s35 "
+        "offset:603 glc slc addr64 tfe", 0, 0, false, false,
+        "test.s:1:47: Error: Some garbages at register name place\n" },
+    { "    buffer_load_format_x  v[61:62], v[18:19], scc, s35 "
+        "offset:603 glc slc addr64 tfe", 0, 0, false, false,
+        "test.s:1:47: Error: Expected 4 scalar registers\n" },
+    { "    buffer_load_format_x  v[61:62], v[18:19], exec, s35 "
+        "offset:603 glc slc addr64 tfe", 0, 0, false, false,
+        "test.s:1:47: Error: Required 4 scalar registers\n" },
     /* other MUBUF instructions */
     { "    buffer_load_format_x v61, v18, s[80:83], s35 idxen offset:603",
         0xe000225bU, 0x23143d12U, true, true, "" },
@@ -2899,14 +2968,25 @@ const GCNAsmOpcodeCase encGCNOpcodeCases[] =
         "test.s:1:6: Error: Unknown EXP target\n" },
     { "exp  param, v116, v93, v27, v124 done vm", 0, 0, false, false,
         "test.s:1:6: Error: Missing number\n" },
+    // glitch SGPR test
+    { "vcc_mask = %s[48:49]\ns_and_saveexec_b64 vcc_mask, vcc\n",
+        0xbeb0246aU, 0, false, true, "" },
+    { "exec_masc = %s[48:49]\ns_and_saveexec_b64 exec_masc, vcc\n",
+        0xbeb0246aU, 0, false, true, "" },
     { nullptr, 0, 0, false, false, 0 }
 };
 
 const GCNAsmOpcodeCase encGCN11OpcodeCases[] =
 {   /* flat registers */
     { "    s_add_u32  flat_scratch_lo, s4, s61", 0x80683d04U, 0, false, true, "" },
+    { "    s_add_u32  flat_scratch[0], s4, s61", 0x80683d04U, 0, false, true, "" },
     { "    s_add_u32  flat_scratch_hi, s4, s61", 0x80693d04U, 0, false, true, "" },
+    { "    s_add_u32  flat_scratch[1], s4, s61", 0x80693d04U, 0, false, true, "" },
     { "    s_xor_b64 s[22:23], flat_scratch, s[62:63]\n",
+        0x89963e68U, 0, false, true, "" },
+    { "    s_xor_b64 s[22:23], flat_scratch[0:1], s[62:63]\n",
+        0x89963e68U, 0, false, true, "" },
+    { " xreg=%flat_scratch ;  s_xor_b64 s[22:23], xreg, s[62:63]\n",
         0x89963e68U, 0, false, true, "" },
     /* SOPP encoding */
     { "    s_setkill  0x32b", 0xbf8b032bU, 0, false, true, "" },
@@ -3079,5 +3159,7 @@ const GCNAsmOpcodeCase encGCN11OpcodeCases[] =
         0xdd7c0000U, 0x2f0041bbU, true, true, "" },
     { "flat_atomic_fmax_x2 v[47:48], v[187:188], v[65:66]",
         0xdd800000U, 0x2f0041bbU, true, true, "" },
+    { "flat_scratch_masc = %s[48:49]\ns_and_saveexec_b64 flat_scratch_masc, vcc\n",
+        0xbeb0246aU, 0, false, true, "" },
     { nullptr, 0, 0, false, false, 0 }
 };

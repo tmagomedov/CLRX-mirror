@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <string>
 #include <CLRX/utils/Utilities.h>
+#include <CLRX/utils/GPUId.h>
 
 namespace CLRX
 {
@@ -54,25 +55,11 @@ enum : cxbyte
     GCNENC_MAXVAL = GCNENC_FLAT
 };
 
-// GCN architecture masks (bit represents architecture)
-enum : uint16_t
-{
-    ARCH_SOUTHERN_ISLANDS = 1,
-    ARCH_SEA_ISLANDS = 2,
-    ARCH_VOLCANIC_ISLANDS = 4,
-    ARCH_HD7X00 = 1,
-    ARCH_RX2X0 = 2,
-    ARCH_RX3X0 = 4,
-    ARCH_RXVEGA = 8,
-    ARCH_GCN_1_0_1 = 0x3,
-    ARCH_GCN_1_1_2 = 0x6,
-    ARCH_GCN_1_1_2_4 = 0xe,
-    ARCH_GCN_1_2_4 = 0xc,
-    ARCH_GCN_ALL = 0xffff
-};
+
+typedef uint16_t GCNInsnMode;
 
 // modes for GCN instructions
-enum : uint16_t
+enum : GCNInsnMode
 {
     GCN_STDMODE = 0,    /// standard mode
     GCN_REG_ALL_64 = 15,    /// all register operand is 64-bit
@@ -218,9 +205,9 @@ struct CLRX_INTERNAL GCNInstruction
 {
     const char* mnemonic;
     cxbyte encoding;
-    uint16_t mode;
+    GCNInsnMode mode;
     uint16_t code;
-    uint16_t archMask; // mask of architectures whose have instruction
+    GPUArchMask archMask; // mask of architectures whose have instruction
 };
 
 // version GCNInstruction for assembler (with two code: for VOPX and VOP3)
@@ -228,9 +215,9 @@ struct CLRX_INTERNAL GCNAsmInstruction
 {
     const char* mnemonic;
     cxbyte encoding;
-    uint16_t mode;
+    GCNInsnMode mode;
     uint16_t code1, code2; // code1 - first code, code2 - VOP3 encoding code
-    uint16_t archMask; // mask of architectures whose have instruction
+    GPUArchMask archMask; // mask of architectures whose have instruction
 };
 
 CLRX_INTERNAL extern const GCNInstruction gcnInstrsTable[];

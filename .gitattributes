@@ -8,6 +8,7 @@ CLRX/amdasm/AsmSource.h -text
 CLRX/amdasm/Assembler.h -text
 CLRX/amdasm/Commons.h -text
 CLRX/amdasm/Disassembler.h -text
+CLRX/amdasm/GCNDefs.h -text
 CLRX/amdbin/AmdBinGen.h -text
 CLRX/amdbin/AmdBinaries.h -text
 CLRX/amdbin/AmdCL2BinGen.h -text
@@ -57,6 +58,7 @@ amdasm/AsmRegAlloc.h -text
 amdasm/AsmRegAllocLive.cpp -text
 amdasm/AsmRegAllocSSAData.cpp -text
 amdasm/AsmSource.cpp -text
+amdasm/AsmWait.cpp -text
 amdasm/Assembler.cpp -text
 amdasm/CMakeLists.txt -text svneol=unset#text/plain
 amdasm/DisasmAmd.cpp -text
@@ -200,6 +202,7 @@ tests/amdasm/GCNDisasmOpc12.cpp -text
 tests/amdasm/GCNDisasmOpc14.cpp -text
 tests/amdasm/GCNDisasmOpcodes.cpp -text
 tests/amdasm/GCNRegVarUsage.cpp -text
+tests/amdasm/GCNWaitHandle.cpp -text
 tests/amdasm/amdbins/amd1-diffdims.clo -text svneol=unset#application/x-executable
 tests/amdasm/amdbins/amd1.clo -text svneol=unset#application/x-executable
 tests/amdasm/amdbins/amdcl2.clo -text svneol=unset#application/x-executable
@@ -394,6 +397,7 @@ tests/amdbin/rocmbins/rijndael.hsaco.regen -text svneol=unset#application/x-shar
 tests/amdbin/rocmbins/vectoradd-rocm.clo.regen -text svneol=unset#application/x-sharedlib
 tests/utils/CLIParser.cpp -text
 tests/utils/CMakeLists.txt -text svneol=unset#text/plain
+tests/utils/DTree.cpp -text
 tests/utils/GPUId.cpp -text
 tests/utils/cstrtofXTest.cpp -text
 utils/CLIParser.cpp -text

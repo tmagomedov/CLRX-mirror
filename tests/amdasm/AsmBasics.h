@@ -32,7 +32,7 @@ using namespace CLRX;
 struct Section
 {
     const char* name;
-    cxuint kernelId;
+    AsmKernelId kernelId;
     AsmSectionType type;
     Array<cxbyte> content;
 };
@@ -41,7 +41,7 @@ struct SymEntry
 {
     const char* name;
     uint64_t value;
-    cxuint sectionId;
+    AsmSectionId sectionId;
     uint64_t size;
     bool hasValue;
     bool onceDefined;

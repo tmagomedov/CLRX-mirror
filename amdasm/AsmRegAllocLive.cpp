@@ -1292,6 +1292,8 @@ void AsmRegAllocator::createLivenesses(ISAUsageHandler& usageHandler,
         prevWaysIndexMap, livenesses, vregIndexMaps, vidxCallMap, vidxRoutineMap,
         routineMap, regTypesNum, regRanges };
     
+    const size_t linearDepSize = linDepHandler.size();
+    
     while (!flowStack.empty())
     {
         FlowStackEntry3& entry = flowStack.back();
@@ -1328,22 +1330,30 @@ void AsmRegAllocator::createLivenesses(ISAUsageHandler& usageHandler,
                 SVRegMap ssaIdIdxMap;
                 std::vector<AsmRegVarUsage> instrRVUs;
                 
-                size_t oldOffset = cblock.usagePos.readOffset;
                 std::vector<AsmSingleVReg> readSVRegs;
                 std::vector<AsmSingleVReg> writtenSVRegs;
                 
-                usageHandler.setReadPos(cblock.usagePos);
-                linDepHandler.setReadPos(cblock.linearDepPos);
+                ISAUsageHandler::ReadPos usagePos = cblock.usagePos;
+                size_t oldOffset = usageHandler.hasNext(usagePos) ?
+                        cblock.start : cblock.end;
+                
+                size_t linearDepPos = linDepHandler.findPositionByOffset(cblock.start);
                 
                 // register in liveness
+                bool rvuFirst = true;
                 while (true)
                 {
                     AsmRegVarUsage rvu = { 0U, nullptr, 0U, 0U };
                     bool hasNext = false;
-                    if (usageHandler.hasNext() && oldOffset < cblock.end)
+                    if (usageHandler.hasNext(usagePos) && oldOffset < cblock.end)
                     {
                         hasNext = true;
-                        rvu = usageHandler.nextUsage();
+                        rvu = usageHandler.nextUsage(usagePos);
+                        if (rvuFirst)
+                        {
+                            oldOffset = rvu.offset;
+                            rvuFirst = false;
+                        }
                     }
                     const size_t liveTime = oldOffset;
                     if ((!hasNext || rvu.offset > oldOffset) && oldOffset < cblock.end)
@@ -1381,15 +1391,15 @@ void AsmRegAllocator::createLivenesses(ISAUsageHandler& usageHandler,
                         std::vector<AsmRegVarLinearDep> instrLinDeps;
                         AsmRegVarLinearDep linDep = { 0, nullptr, 0, 0 };
                         bool haveLdep = false;
-                        if (oldOffset == 0 && linDepHandler.hasNext())
+                        if (oldOffset == 0 && linearDepPos < linearDepSize)
                         {
                             // special case: if offset is zero, force get linear dep
-                            linDep = linDepHandler.nextLinearDep();
+                            linDep = linDepHandler.getLinearDep(linearDepPos++);
                             haveLdep = true;
                         }
-                        while (linDep.offset < oldOffset && linDepHandler.hasNext())
+                        while (linDep.offset < oldOffset && linearDepPos < linearDepSize)
                         {
-                            linDep = linDepHandler.nextLinearDep();
+                            linDep = linDepHandler.getLinearDep(linearDepPos++);
                             haveLdep = true;
                         }
                         // if found
@@ -1398,8 +1408,8 @@ void AsmRegAllocator::createLivenesses(ISAUsageHandler& usageHandler,
                             {
                                 // just put
                                 instrLinDeps.push_back(linDep);
-                                if (linDepHandler.hasNext())
-                                    linDep = linDepHandler.nextLinearDep();
+                                if (linearDepPos < linearDepSize)
+                                    linDep = linDepHandler.getLinearDep(linearDepPos++);
                                 else // no data
                                     break;
                             }

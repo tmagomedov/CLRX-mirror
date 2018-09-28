@@ -112,6 +112,7 @@ struct AmdCL2KernelInput
     std::vector<AmdCL2RelInput> relocations;    ///< relocation to kernel code
     size_t codeSize;        ///< code size
     const cxbyte* code;     ///< code
+    size_t offset;          ///< kernel offset in (from setup data) code
 };
 
 /// main Input for AmdCL2GPUBinGenerator
@@ -125,6 +126,9 @@ struct AmdCL2Input
     const cxbyte* globalData;   ///< global constant data
     size_t rwDataSize;  ///< global rw data size
     const cxbyte* rwData;   ///< global rw data
+    size_t codeSize;        ///< code size
+    const cxbyte* code;     ///< HSA text code
+    std::vector<AmdCL2RelInput> relocations;    ///< relocation to main code
     size_t bssAlignment;        ///< alignment of global bss
     size_t bssSize;             ///< global bss size
     size_t samplerInitSize;  ///< sampler init size

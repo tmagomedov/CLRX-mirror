@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <CLRX/amdasm/Assembler.h>
 #include <CLRX/utils/Utilities.h>
+#include <CLRX/utils/GPUId.h>
+#include <CLRX/amdasm/GCNDefs.h>
 #include "GCNAsmInternals.h"
 
 namespace CLRX
@@ -62,8 +64,75 @@ static const std::pair<const char*, cxuint> mtbufNFMTNamesMap[] =
     { "uscaled", 2 }
 };
 
+void GCNAsmUtils::prepareRVUAndWait(GCNAssembler* gcnAsm, GPUArchMask arch,
+            bool vdataToRead, bool vdataToWrite, bool haveLds, bool haveTfe,
+            std::vector<cxbyte>& output, const GCNAsmInstruction& gcnInsn)
+{
+    // fix access for VDATA field
+    gcnAsm->instrRVUs[0].rwFlags = (vdataToWrite ? ASMRVU_WRITE : 0) |
+            (vdataToRead ? ASMRVU_READ : 0);
+    // check cmp_swap/fcmp_swap
+    bool vdataDivided = false;
+    if ((gcnInsn.mode & GCN_MHALFWRITE) != 0 && vdataToWrite &&
+        gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
+    {
+        // fix access
+        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[0];
+        uint16_t size = rvu.rend-rvu.rstart;
+        rvu.rend = rvu.rstart + (size>>1);
+        AsmRegVarUsage& nextRvu = gcnAsm->instrRVUs[4];
+        nextRvu = rvu;
+        nextRvu.regField = GCNFIELD_M_VDATAH;
+        nextRvu.rstart += (size>>1);
+        nextRvu.rend = rvu.rstart + size;
+        nextRvu.rwFlags = ASMRVU_READ;
+        vdataDivided = true;
+    }
+    
+    if (haveTfe && (vdataDivided ||
+            gcnAsm->instrRVUs[0].rwFlags!=(ASMRVU_READ|ASMRVU_WRITE)) &&
+            gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
+    {
+        // fix for tfe
+        const cxuint rvuId = (vdataDivided ? 4 : 0);
+        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[rvuId];
+        AsmRegVarUsage& lastRvu = gcnAsm->instrRVUs[5];
+        lastRvu = rvu;
+        lastRvu.rstart = lastRvu.rend-1;
+        lastRvu.rwFlags = ASMRVU_READ|ASMRVU_WRITE;
+        lastRvu.regField = GCNFIELD_M_VDATALAST;
+        rvu.rend--;
+    }
+    
+    // register delayed operations
+    const bool needExpWrite = (vdataToRead && (arch & ARCH_HD7X00) != 0);
+    if (gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
+    {
+        if (!haveLds)
+        {
+            gcnAsm->delayedOps[0] = { output.size(), gcnAsm->instrRVUs[0].regVar,
+                    gcnAsm->instrRVUs[0].rstart, gcnAsm->instrRVUs[0].rend, 1,
+                    GCNDELOP_VMOP, needExpWrite ? GCNDELOP_EXPVMWRITE : GCNDELOP_NONE,
+                    gcnAsm->instrRVUs[0].rwFlags,
+                    cxbyte(needExpWrite ? ASMRVU_READ : 0) };
+            if (haveTfe)
+                gcnAsm->delayedOps[2] = { output.size(), gcnAsm->instrRVUs[5].regVar,
+                        gcnAsm->instrRVUs[5].rstart, gcnAsm->instrRVUs[5].rend, 1,
+                        GCNDELOP_VMOP, GCNDELOP_NONE, gcnAsm->instrRVUs[5].rwFlags };
+            if (vdataDivided)
+                gcnAsm->delayedOps[3] = { output.size(), gcnAsm->instrRVUs[4].regVar,
+                        gcnAsm->instrRVUs[4].rstart, gcnAsm->instrRVUs[4].rend, 1,
+                        GCNDELOP_VMOP, GCNDELOP_NONE, gcnAsm->instrRVUs[4].rwFlags };
+        }
+    }
+    else if (haveLds)
+        gcnAsm->delayedOps[0] = { output.size(), nullptr, uint16_t(0), uint16_t(0),
+                1, GCNDELOP_VMOP, needExpWrite ? GCNDELOP_EXPVMWRITE : GCNDELOP_NONE,
+                cxbyte(0) };
+}
+
 bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,
-                  const char* instrPlace, const char* linePtr, uint16_t arch,
+                  const char* instrPlace, const char* linePtr, GPUArchMask arch,
                   std::vector<cxbyte>& output, GCNAssembler::Regs& gcnRegs,
                   GCNEncSize gcnEncSize)
 {
@@ -71,13 +140,13 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
     bool good = true;
     if (gcnEncSize==GCNEncSize::BIT32)
         ASM_FAIL_BY_ERROR(instrPlace, "Only 64-bit size for MUBUF/MTBUF encoding")
-    const uint16_t mode1 = (gcnInsn.mode & GCN_MASK1);
+    const GCNInsnMode mode1 = (gcnInsn.mode & GCN_MASK1);
     RegRange vaddrReg(0, 0);
     RegRange vdataReg(0, 0);
     GCNOperand soffsetOp{};
     RegRange srsrcReg(0, 0);
     const bool isGCN12 = (arch & ARCH_GCN_1_2_4)!=0;
-    const bool isGCN14 = (arch & ARCH_RXVEGA)!=0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
     GCNAssembler* gcnAsm = static_cast<GCNAssembler*>(asmr.isaAssembler);
     
     skipSpacesToEnd(linePtr, end);
@@ -330,29 +399,6 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
                         "Required 2 vector registers" : "Required 1 vector register")
         }
     }
-    // fix access for VDATA field
-    gcnAsm->instrRVUs[0].rwFlags = (vdataToWrite ? ASMRVU_WRITE : 0) |
-            (vdataToRead ? ASMRVU_READ : 0);
-    // check fcmpswap
-    bool vdataDivided = false;
-    if ((gcnInsn.mode & GCN_MHALFWRITE) != 0 && vdataToWrite && !haveLds &&
-        gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
-    {
-        // fix access
-        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[0];
-        uint16_t size = rvu.rend-rvu.rstart;
-        rvu.rend = rvu.rstart + (size>>1);
-        AsmRegVarUsage& nextRvu = gcnAsm->instrRVUs[4];
-        nextRvu = rvu;
-        nextRvu.regField = GCNFIELD_M_VDATAH;
-        nextRvu.rstart += (size>>1);
-        nextRvu.rend = rvu.rstart + size;
-        nextRvu.rwFlags = ASMRVU_READ;
-        vdataDivided = true;
-    }
-    // do not read vaddr if no offen and idxen and no addr64
-    if (!haveAddr64 && !haveOffen && !haveIdxen)
-        gcnAsm->instrRVUs[1].regField = ASMFIELD_NONE; // ignore this
     
     if (!good || !checkGarbagesAtEnd(asmr, linePtr))
         return false;
@@ -366,27 +412,12 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
     // ignore vdata if LDS
     if (haveLds)
         gcnAsm->instrRVUs[0].regField = ASMFIELD_NONE;
+    // do not read vaddr if no offen and idxen and no addr64
+    if (!haveAddr64 && !haveOffen && !haveIdxen)
+        gcnAsm->instrRVUs[1].regField = ASMFIELD_NONE; // ignore this
     
-    if (haveTfe && (vdataDivided ||
-            gcnAsm->instrRVUs[0].rwFlags!=(ASMRVU_READ|ASMRVU_WRITE)) &&
-            gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
-    {
-        // fix for tfe
-        const cxuint rvuId = (vdataDivided ? 4 : 0);
-        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[rvuId];
-        AsmRegVarUsage& lastRvu = gcnAsm->instrRVUs[5];
-        lastRvu = rvu;
-        lastRvu.rstart = lastRvu.rend-1;
-        lastRvu.rwFlags = ASMRVU_READ|ASMRVU_WRITE;
-        lastRvu.regField = GCNFIELD_M_VDATALAST;
-        if (lastRvu.regVar==nullptr) // fix for regusage
-        {
-            // to save register size for VDATALAST
-            lastRvu.rstart = gcnAsm->instrRVUs[0].rstart;
-            lastRvu.rend--;
-        }
-        rvu.rend--;
-    }
+    prepareRVUAndWait(gcnAsm, arch, vdataToRead, vdataToWrite, haveLds, haveTfe,
+                      output, gcnInsn);
     
     if (offsetExpr!=nullptr)
         offsetExpr->setTarget(AsmExprTarget(GCNTGT_MXBUFOFFSET, asmr.currentSection,
@@ -428,14 +459,14 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
 }
 
 bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,
-                  const char* instrPlace, const char* linePtr, uint16_t arch,
+                  const char* instrPlace, const char* linePtr, GPUArchMask arch,
                   std::vector<cxbyte>& output, GCNAssembler::Regs& gcnRegs,
                   GCNEncSize gcnEncSize)
 {
     const char* end = asmr.line+asmr.lineSize;
     if (gcnEncSize==GCNEncSize::BIT32)
         ASM_FAIL_BY_ERROR(instrPlace, "Only 64-bit size for MIMG encoding")
-    const bool isGCN14 = (arch & ARCH_RXVEGA)!=0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
     bool good = true;
     RegRange vaddrReg(0, 0);
     RegRange vdataReg(0, 0);
@@ -589,57 +620,6 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
         ASM_NOTGOOD_BY_ERROR(srsrcPlace, (haveR128) ? "Required 4 scalar registers" :
                     "Required 8 scalar registers")
     
-    const bool vdataToWrite = ((gcnInsn.mode&GCN_MLOAD) != 0 ||
-                ((gcnInsn.mode&GCN_MATOMIC)!=0 && haveGlc));
-    const bool vdataToRead = ((gcnInsn.mode&GCN_MLOAD) == 0 ||
-                ((gcnInsn.mode&GCN_MATOMIC)!=0));
-    
-    // fix access for VDATA field
-    gcnAsm->instrRVUs[0].rwFlags = (vdataToWrite ? ASMRVU_WRITE : 0) |
-            (vdataToRead ? ASMRVU_READ : 0);
-    // fix alignment
-    if (gcnAsm->instrRVUs[2].regVar != nullptr)
-        gcnAsm->instrRVUs[2].align = 4;
-    
-    // check fcmpswap
-    bool vdataDivided = false;
-    if ((gcnInsn.mode & GCN_MHALFWRITE) != 0 && vdataToWrite &&
-        gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
-    {
-        // fix access
-        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[0];
-        uint16_t size = rvu.rend-rvu.rstart;
-        rvu.rend = rvu.rstart + (size>>1);
-        AsmRegVarUsage& nextRvu = gcnAsm->instrRVUs[4];
-        nextRvu = rvu;
-        nextRvu.regField = GCNFIELD_M_VDATAH;
-        nextRvu.rstart += (size>>1);
-        nextRvu.rend = rvu.rstart + size;
-        nextRvu.rwFlags = ASMRVU_READ;
-        vdataDivided = true;
-    }
-    
-    if (haveTfe && (vdataDivided ||
-            gcnAsm->instrRVUs[0].rwFlags!=(ASMRVU_READ|ASMRVU_WRITE)) &&
-       gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
-    {
-        // fix for tfe
-        const cxuint rvuId = (vdataDivided ? 4 : 0);
-        AsmRegVarUsage& rvu = gcnAsm->instrRVUs[rvuId];
-        AsmRegVarUsage& lastRvu = gcnAsm->instrRVUs[5];
-        lastRvu = rvu;
-        lastRvu.rstart = lastRvu.rend-1;
-        lastRvu.rwFlags = ASMRVU_READ|ASMRVU_WRITE;
-        lastRvu.regField = GCNFIELD_M_VDATALAST;
-        if (lastRvu.regVar==nullptr) // fix for regusage
-        {
-            // to save register size for VDATALAST
-            lastRvu.rstart = gcnAsm->instrRVUs[0].rstart;
-            lastRvu.rend--;
-        }
-        rvu.rend--;
-    }
-    
     if (!good || !checkGarbagesAtEnd(asmr, linePtr))
         return false;
     
@@ -647,6 +627,18 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     if (!haveUnorm && ((gcnInsn.mode&GCN_MLOAD) == 0 || (gcnInsn.mode&GCN_MATOMIC)!=0))
         // unorm is not set for this instruction
         ASM_FAIL_BY_ERROR(instrPlace, "Unorm is not set for store or atomic instruction")
+    
+    const bool vdataToWrite = ((gcnInsn.mode&GCN_MLOAD) != 0 ||
+                ((gcnInsn.mode&GCN_MATOMIC)!=0 && haveGlc));
+    const bool vdataToRead = ((gcnInsn.mode&GCN_MLOAD) == 0 ||
+                ((gcnInsn.mode&GCN_MATOMIC)!=0));
+    
+    // fix alignment
+    if (gcnAsm->instrRVUs[2].regVar != nullptr)
+        gcnAsm->instrRVUs[2].align = 4;
+    
+    prepareRVUAndWait(gcnAsm, arch, vdataToRead, vdataToWrite, false, haveTfe,
+                      output, gcnInsn);
     
     // put instruction words
     uint32_t words[2];
@@ -668,7 +660,7 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
 }
 
 bool GCNAsmUtils::parseEXPEncoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,
-                  const char* instrPlace, const char* linePtr, uint16_t arch,
+                  const char* instrPlace, const char* linePtr, GPUArchMask arch,
                   std::vector<cxbyte>& output, GCNAssembler::Regs& gcnRegs,
                   GCNEncSize gcnEncSize)
 {
@@ -757,6 +749,9 @@ bool GCNAsmUtils::parseEXPEncoding(Assembler& asmr, const GCNAsmInstruction& gcn
             gcnAsm->setCurrentRVU(i);
             good &= parseVRegRange(asmr, linePtr, vsrcsReg[i], 1, GCNFIELD_EXP_VSRC0+i,
                         true, INSTROP_SYMREGRANGE|INSTROP_READ);
+            gcnAsm->delayedOps[i] = { output.size(), gcnAsm->instrRVUs[i].regVar,
+                        gcnAsm->instrRVUs[i].rstart, gcnAsm->instrRVUs[i].rend,
+                        1, GCNDELOP_EXPORT, GCNDELOP_NONE, gcnAsm->instrRVUs[i].rwFlags };
         }
         else
         {
@@ -824,14 +819,14 @@ bool GCNAsmUtils::parseEXPEncoding(Assembler& asmr, const GCNAsmInstruction& gcn
 }
 
 bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,
-                  const char* instrPlace, const char* linePtr, uint16_t arch,
+                  const char* instrPlace, const char* linePtr, GPUArchMask arch,
                   std::vector<cxbyte>& output, GCNAssembler::Regs& gcnRegs,
                   GCNEncSize gcnEncSize)
 {
     const char* end = asmr.line+asmr.lineSize;
     if (gcnEncSize==GCNEncSize::BIT32)
         ASM_FAIL_BY_ERROR(instrPlace, "Only 64-bit size for FLAT encoding")
-    const bool isGCN14 = (arch & ARCH_RXVEGA)!=0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
     const cxuint flatMode = (gcnInsn.mode & GCN_FLAT_MODEMASK);
     bool good = true;
     RegRange vaddrReg(0, 0);
@@ -1035,12 +1030,6 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
             lastRvu.rstart = lastRvu.rend-1;
             lastRvu.rwFlags = ASMRVU_READ|ASMRVU_WRITE;
             lastRvu.regField = GCNFIELD_FLAT_VDSTLAST;
-            if (lastRvu.regVar==nullptr) // fix for regusage
-            {
-                // to save register size for VDSTLAST
-                lastRvu.rstart = rvu.rstart;
-                lastRvu.rend--;
-            }
             rvu.rend--;
         }
         
@@ -1048,8 +1037,38 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
             gcnAsm->instrRVUs[0].regField = ASMFIELD_NONE;
     }
     
+    if (haveLds && flatMode == GCN_FLAT_FLAT)
+        ASM_NOTGOOD_BY_ERROR(vdstPlace,
+                        "LDS is allowed only for SCRATCH and GLOBAL instructions")
+    
     if (!good || !checkGarbagesAtEnd(asmr, linePtr))
         return false;
+    
+    const cxbyte secondDelOpType = (flatMode==GCN_FLAT_FLAT) ? GCNDELOP_LDSOP :
+                GCNDELOP_NONE;
+    if (gcnAsm->instrRVUs[0].regField != ASMFIELD_NONE)
+    {
+        if (!haveLds)
+            gcnAsm->delayedOps[0] = { output.size(), gcnAsm->instrRVUs[0].regVar,
+                    gcnAsm->instrRVUs[0].rstart, gcnAsm->instrRVUs[0].rend,
+                    1, GCNDELOP_VMOP, secondDelOpType, gcnAsm->instrRVUs[0].rwFlags,
+                    cxbyte(secondDelOpType!=GCNDELOP_NONE ?
+                            gcnAsm->instrRVUs[0].rwFlags : 0) };
+        else
+            gcnAsm->delayedOps[0] = { output.size(), nullptr, uint16_t(0), uint16_t(0),
+                        1, GCNDELOP_VMOP, secondDelOpType, cxbyte(0), cxbyte(0) };
+        
+        if (haveTfe && vdstReg && !haveLds)
+            gcnAsm->delayedOps[1] = { output.size(), gcnAsm->instrRVUs[3].regVar,
+                    gcnAsm->instrRVUs[3].rstart, gcnAsm->instrRVUs[3].rend, 1,
+                    GCNDELOP_VMOP, GCNDELOP_NONE, gcnAsm->instrRVUs[3].rwFlags };
+    }
+    if ((gcnInsn.mode & GCN_FLAT_NODATA) == 0)
+        gcnAsm->delayedOps[2] = { output.size(), gcnAsm->instrRVUs[2].regVar,
+                gcnAsm->instrRVUs[2].rstart, gcnAsm->instrRVUs[2].rend,
+                1, GCNDELOP_VMOP, secondDelOpType, gcnAsm->instrRVUs[2].rwFlags,
+                cxbyte(secondDelOpType!=GCNDELOP_NONE ?
+                            gcnAsm->instrRVUs[2].rwFlags : 0) };
     
     if (instOffsetExpr!=nullptr)
         instOffsetExpr->setTarget(AsmExprTarget(flatMode!=0 ?

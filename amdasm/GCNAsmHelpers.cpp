@@ -24,6 +24,7 @@
 #include <memory>
 #include <utility>
 #include <algorithm>
+#include <CLRX/utils/GPUId.h>
 #include "GCNAsmInternals.h"
 
 using namespace CLRX;
@@ -71,8 +72,15 @@ void GCNAsmUtils::printXRegistersRequired(Assembler& asmr, const char* linePtr,
     asmr.printError(linePtr, buf);
 }
 
+static inline cxbyte getRegVarAlign(const AsmRegVar* regVar, cxuint regsNum, Flags flags)
+{
+    if ((flags & INSTROP_UNALIGNED) == 0 && regVar->type==REGTYPE_SGPR)
+        return regsNum==2 ? 2 : regsNum>=3 ? 4 : 1;
+    return 1;
+}
+
 bool GCNAsmUtils::parseRegVarRange(Assembler& asmr, const char*& linePtr,
-                 RegRange& regPair, uint16_t arch, cxuint regsNum, AsmRegField regField,
+                 RegRange& regPair, GPUArchMask arch, cxuint regsNum, AsmRegField regField,
                  Flags flags, bool required)
 {
     const char* oldLinePtr = linePtr;
@@ -140,11 +148,7 @@ bool GCNAsmUtils::parseRegVarRange(Assembler& asmr, const char*& linePtr,
             
             if (regField!=ASMFIELD_NONE)
             {
-                cxbyte align = 1;
-                // set correct alignment for range
-                if ((flags & INSTROP_UNALIGNED) == 0 && regVar->type==REGTYPE_SGPR)
-                    align = regsNum==2 ? 2 : regsNum>=3 ? 4 : 1;
-                
+                cxbyte align = getRegVarAlign(regVar, regsNum, flags);
                 // set reg var usage for current position and instruction field
                 gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), regVar,
                     uint16_t(rstart), uint16_t(rend), regField,
@@ -162,8 +166,26 @@ bool GCNAsmUtils::parseRegVarRange(Assembler& asmr, const char*& linePtr,
     return true;
 }
 
+static inline bool isGCNConstLiteral(uint16_t rstart, GPUArchMask arch)
+{
+    if ((rstart >= 128 && rstart <= 208) || (rstart >= 240 && rstart <= 247))
+        return true;
+    return ((arch & ARCH_GCN_1_2_4) != 0 && rstart == 248);
+}
+
+static inline bool isGCNVReg(uint16_t rstart, uint16_t rend, const AsmRegVar* regVar)
+{ return (regVar==nullptr && rstart >= 256 && rend >= 256) ||
+            (regVar!=nullptr && regVar->type == REGTYPE_VGPR); }
+
+static inline bool isGCNSReg(uint16_t rstart, uint16_t rend, const AsmRegVar* regVar)
+{ return (regVar==nullptr && rstart < 128 && rend < 128) ||
+        (regVar!=nullptr && regVar->type == REGTYPE_SGPR); }
+
+static inline bool isGCNSSource(uint16_t rstart, uint16_t rend, const AsmRegVar* regVar)
+{ return (regVar==nullptr && rstart >= 128 && rstart<255); }
+
 bool GCNAsmUtils::parseSymRegRange(Assembler& asmr, const char*& linePtr,
-            RegRange& regPair, uint16_t arch, cxuint regsNum, AsmRegField regField,
+            RegRange& regPair, GPUArchMask arch, cxuint regsNum, AsmRegField regField,
             Flags flags, bool required)
 {
     const char* oldLinePtr = linePtr;
@@ -184,16 +206,19 @@ bool GCNAsmUtils::parseSymRegRange(Assembler& asmr, const char*& linePtr,
         symEntry->second.regRange)
     {
         // set up regrange
+        const AsmRegVar* regVar = symEntry->second.regVar;
         cxuint rstart = symEntry->second.value&UINT_MAX;
         cxuint rend = symEntry->second.value>>32;
         /* parse register range if:
          * vector/scalar register enabled and is vector/scalar register or
          * other scalar register, (ignore VCCZ, EXECZ, SCC if no SSOURCE enabled) */
-        if (((flags & INSTROP_VREGS)!=0 && rstart >= 256 && rend >= 256) ||
-            ((flags & INSTROP_SREGS)!=0 && rstart < 256 && rend < 256 &&
-            (((flags&INSTROP_SSOURCE)!=0) || (rstart!=251 && rstart!=252 && rstart!=253))))
+        if (((flags & INSTROP_VREGS)!=0 && isGCNVReg(rstart, rend, regVar)) ||
+            ((flags & INSTROP_SREGS)!=0 && isGCNSReg(rstart, rend, regVar)) ||
+            (((flags&INSTROP_SSOURCE)!=0) && isGCNSSource(rstart, rend, regVar)))
         {
             skipSpacesToEnd(linePtr, end);
+            const bool isConstLit = (regVar==nullptr && isGCNConstLiteral(rstart, arch));
+            
             if (linePtr != end && *linePtr == '[')
             {
                 uint64_t value1, value2;
@@ -224,40 +249,60 @@ bool GCNAsmUtils::parseSymRegRange(Assembler& asmr, const char*& linePtr,
                     ASM_FAIL_BY_ERROR(regRangePlace, "Illegal register range")
                 if (value2 >= rend-rstart || value1 >= rend-rstart)
                     ASM_FAIL_BY_ERROR(regRangePlace, "Register range out of range")
+                    
+                if (isConstLit && (value1!=0 || (value2!=0 && value2+1!=regsNum)))
+                {
+                    ASM_FAIL_BY_ERROR(linePtr, "Register range for const literals must be"
+                            "[0] or [0:regsNum-1]");
+                    return false;
+                }
+                
                 rend = rstart + value2+1;
                 rstart += value1;
             }
             
-            if (regsNum!=0 && regsNum != rend-rstart)
+            if (!isConstLit)
             {
-                printXRegistersRequired(asmr, regRangePlace, regTypeName, regsNum);
-                return false;
-            }
-            /// check aligned for scalar registers
-            if (rstart<maxSGPRsNum)
-            {
-                if ((flags & INSTROP_UNALIGNED) == 0)
+                if (regsNum!=0 && regsNum != rend-rstart)
                 {
-                    if ((rend-rstart==2 && (rstart&1)!=0) ||
-                        (rend-rstart>2 && (rstart&3)!=0))
-                        ASM_FAIL_BY_ERROR(regRangePlace, "Unaligned scalar register range")
+                    printXRegistersRequired(asmr, regRangePlace, regTypeName, regsNum);
+                    return false;
                 }
-                else if ((flags & INSTROP_UNALIGNED) == INSTROP_SGPR_UNALIGNED)
-                    if ((rstart & 0xfc) != ((rend-1) & 0xfc))
-                        // unaligned, but some restrictions:
-                        // two regs can be in single 4-dword register line
-                        ASM_FAIL_BY_ERROR(regRangePlace,
-                                "Scalar register range cross two register lines")
+                /// check aligned for scalar registers but not regvars
+                if (regVar==nullptr && rstart<maxSGPRsNum)
+                {
+                    if ((flags & INSTROP_UNALIGNED) == 0)
+                    {
+                        if ((rend-rstart==2 && (rstart&1)!=0) ||
+                            (rend-rstart>2 && (rstart&3)!=0))
+                            ASM_FAIL_BY_ERROR(regRangePlace,
+                                        "Unaligned scalar register range")
+                    }
+                    else if ((flags & INSTROP_UNALIGNED) == INSTROP_SGPR_UNALIGNED)
+                        if ((rstart & 0xfc) != ((rend-1) & 0xfc))
+                            // unaligned, but some restrictions:
+                            // two regs can be in single 4-dword register line
+                            ASM_FAIL_BY_ERROR(regRangePlace,
+                                    "Scalar register range cross two register lines")
+                }
+                
+                // set reg var usage for current position and instruction field
+                if (regField != ASMFIELD_NONE)
+                {
+                    cxbyte align = 0;
+                    if (regVar != nullptr)
+                        align = getRegVarAlign(regVar, regsNum, flags);
+                    
+                    gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), regVar,
+                        uint16_t(rstart), uint16_t(rend), regField,
+                        cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
+                        ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), align });
+                }
+                regPair = { rstart, rend, regVar };
             }
+            else
+                regPair = { rstart, 0, nullptr };
             
-            // set reg var usage for current position and instruction field
-            if (regField != ASMFIELD_NONE)
-                gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), nullptr,
-                    uint16_t(rstart), uint16_t(rend), regField,
-                    cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
-                    ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), 0 });
-            
-            regPair = { rstart, rend, symEntry->second.regVar };
             return true;
         }
     }
@@ -332,7 +377,7 @@ bool GCNAsmUtils::parseVRegRange(Assembler& asmr, const char*& linePtr, RegRange
             // try to parse regrange symbol
             linePtr = oldLinePtr;
             return parseSymRegRange(asmr, linePtr, regPair, 0, regsNum,
-                            regField, INSTROP_VREGS, required);
+                        regField, INSTROP_VREGS|(flags&INSTROP_ACCESS_MASK), required);
         }
         else if (regPair)
             return true;
@@ -400,7 +445,7 @@ bool GCNAsmUtils::parseVRegRange(Assembler& asmr, const char*& linePtr, RegRange
 }
 
 bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange& regPair,
-                    uint16_t arch, cxuint regsNum, AsmRegField regField,
+                    GPUArchMask arch, cxuint regsNum, AsmRegField regField,
                     bool required, Flags flags)
 {
     const char* oldLinePtr = linePtr;
@@ -438,7 +483,7 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
     }
     
     /* parse single SGPR */
-    const bool isGCN14 = (arch & ARCH_RXVEGA) != 0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4) != 0;
     const cxuint ttmpSize = isGCN14 ? 16 : 12;
     const cxuint ttmpStart = isGCN14 ? 108 : 112;
         
@@ -495,7 +540,9 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
         else
             linePtr = oldPlace;
     }
-        
+    
+    bool doubleReg = false; // register that have two 32-bit regs
+    bool specialSGPRReg = false;
     if (!isRange) // if not sgprs
     {
         const char* oldLinePtr = linePtr;
@@ -517,6 +564,7 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
             /// vcc
             loHiRegSuffix = 3;
             loHiReg = 106;
+            specialSGPRReg = true;
         }
         else if (::strncmp(regName, "exec", 4)==0)
         {
@@ -524,7 +572,7 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
             loHiRegSuffix = 4;
             loHiReg = 126;
         }
-        else if ((arch & ARCH_RXVEGA) == 0 && regName[0]=='t')
+        else if ((arch & ARCH_GCN_1_4) == 0 && regName[0]=='t')
         {
             /* tma,tba */
             if (regName[1] == 'b' && regName[2] == 'a')
@@ -556,12 +604,14 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
                 // flat
                 loHiRegSuffix = 12;
                 loHiReg = (arch&ARCH_GCN_1_2_4)?102:104;
+                specialSGPRReg = true;
             }
             else if ((arch&ARCH_GCN_1_2_4)!=0 && ::strncmp(regName, "xnack_mask", 10)==0)
             {
                 // xnack
                 loHiRegSuffix = 10;
                 loHiReg = 104;
+                specialSGPRReg = true;
             }
         }
         
@@ -570,31 +620,66 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
         {
             if (regName[loHiRegSuffix] == '_')
             {
+                bool isLoHiName = false;
                 // if suffix _lo
                 if (regName[loHiRegSuffix+1] == 'l' && regName[loHiRegSuffix+2] == 'o' &&
                     regName[loHiRegSuffix+3] == 0)
+                {
                     regPair = { loHiReg, loHiReg+1 };
+                    isLoHiName = true;
+                }
                 // if suffxi _hi
                 else if (regName[loHiRegSuffix+1] == 'h' &&
                     regName[loHiRegSuffix+2] == 'i' && regName[loHiRegSuffix+3] == 0)
-                    regPair = { loHiReg+1, loHiReg+2 };
-                if (regsNum!=0 && regsNum != 1)
                 {
-                    printXRegistersRequired(asmr, sgprRangePlace, "scalar", regsNum);
-                    return false;
+                    regPair = { loHiReg+1, loHiReg+2 };
+                    isLoHiName = true;
                 }
-                return true;
+                if (isLoHiName)
+                {
+                    if (regsNum!=0 && regsNum != 1)
+                    {
+                        printXRegistersRequired(asmr, sgprRangePlace, "scalar", regsNum);
+                        return false;
+                    }
+                    
+                    // set reg var usage for current position and instruction field
+                    if (regField != ASMFIELD_NONE && specialSGPRReg)
+                        gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), nullptr,
+                            regPair.start, regPair.end, regField,
+                            cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
+                            ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), 0 });
+                    return true;
+                }
+                else
+                    trySymReg = true;
             }
             else if (regName[loHiRegSuffix] == 0)
             {
                 // full 64-bit register
-                if (regsNum!=0 && regsNum != 2)
-                {
-                    printXRegistersRequired(asmr, sgprRangePlace, "scalar", regsNum);
-                    return false;
-                }
                 regPair = { loHiReg, loHiReg+2 };
-                return true;
+                
+                if (linePtr == end || *linePtr!='[')
+                {
+                    if (regsNum!=0 && regsNum != 2)
+                    {
+                        printXRegistersRequired(asmr, sgprRangePlace, "scalar", regsNum);
+                        return false;
+                    }
+                    // set reg var usage for current position and instruction field
+                    if (regField != ASMFIELD_NONE && specialSGPRReg)
+                        gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), nullptr,
+                            regPair.start, regPair.end, regField,
+                            cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
+                            ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), 0 });
+                    return true;
+                }
+                else
+                {
+                    // if regrange []
+                    isRange = true;
+                    doubleReg = true;
+                }
             }
             else // this is not this register
                 trySymReg = true;
@@ -613,7 +698,8 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
             {
                 linePtr = oldLinePtr;
                 return parseSymRegRange(asmr, linePtr, regPair, arch, regsNum,
-                        regField, INSTROP_SREGS | (flags & INSTROP_UNALIGNED), required);
+                        regField, INSTROP_SREGS |
+                        (flags & (INSTROP_ACCESS_MASK|INSTROP_UNALIGNED)), required);
             }
             else if (regPair)
                 return true;
@@ -651,13 +737,16 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
         
         skipSpacesToEnd(linePtr, end);
         if (linePtr == end || *linePtr != ']')
+        {
             // error
-            ASM_FAIL_BY_ERROR(sgprRangePlace, (!ttmpReg) ?
-                        "Unterminated scalar register range" :
-                        "Unterminated TTMPRegister range")
+            const char* errMessage = (doubleReg ? "Unterminated double register range" :
+                    (ttmpReg ? "Unterminated TTMPRegister range" :
+                            "Unterminated scalar register range"));
+            ASM_FAIL_BY_ERROR(sgprRangePlace, errMessage)
+        }
         ++linePtr;
         
-        if (!ttmpReg)
+        if (!ttmpReg && !doubleReg)
         {
             // is scalar register
             if (value2 < value1)
@@ -667,7 +756,7 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
                 ASM_FAIL_BY_ERROR(sgprRangePlace,
                             "Some scalar register number out of range")
         }
-        else
+        else if (!doubleReg)
         {
             // is TTMP register
             if (value2 < value1)
@@ -678,6 +767,16 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
                             isGCN14 ? "Some TTMPRegister number out of range (0-15)" :
                             "Some TTMPRegister number out of range (0-11)")
         }
+        else
+        {
+            // double reg - VCC, flat_scratch, xnack_mask
+            if (value2 < value1)
+                // error (illegal register range)
+                ASM_FAIL_BY_ERROR(sgprRangePlace, "Illegal doublereg range")
+            if (value1 >= 2 || value2 >= 2)
+                ASM_FAIL_BY_ERROR(sgprRangePlace,
+                            "Some doublereg number out of range (0-1)")
+        }
         
         if (regsNum!=0 && regsNum != value2-value1+1)
         {
@@ -685,7 +784,7 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
             return false;
         }
         /// check alignment
-        if (!ttmpReg)
+        if (!ttmpReg && !doubleReg)
         {
             if ((flags & INSTROP_UNALIGNED)==0)
             {
@@ -708,8 +807,18 @@ bool GCNAsmUtils::parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange
                     cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
                     ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), 0 });
         }
-        else
+        else if (!doubleReg)
             regPair = { ttmpStart+value1, ttmpStart+uint16_t(value2)+1 };
+        else
+        {
+            regPair = { regPair.start+value1, regPair.start+uint16_t(value2)+1 };
+            // set reg var usage for current position and instruction field
+            if (regField != ASMFIELD_NONE && specialSGPRReg)
+                gcnAsm->setRegVarUsage({ size_t(asmr.currentOutPos), nullptr,
+                    regPair.start, regPair.end, regField,
+                    cxbyte(((flags & INSTROP_READ)!=0 ? ASMRVU_READ: 0) |
+                    ((flags & INSTROP_WRITE)!=0 ? ASMRVU_WRITE : 0)), 0 });
+        }
         return true;
     }
     } catch(const ParseException& ex)
@@ -995,7 +1104,7 @@ static const size_t ssourceNamesGCN14TblSize = sizeof(ssourceNamesGCN14Tbl) /
 
 // main routine to parse operand
 bool GCNAsmUtils::parseOperand(Assembler& asmr, const char*& linePtr, GCNOperand& operand,
-             std::unique_ptr<AsmExpression>* outTargetExpr, uint16_t arch,
+             std::unique_ptr<AsmExpression>* outTargetExpr, GPUArchMask arch,
              cxuint regsNum, Flags instrOpMask, AsmRegField regField)
 {
     if (outTargetExpr!=nullptr)
@@ -1005,7 +1114,7 @@ bool GCNAsmUtils::parseOperand(Assembler& asmr, const char*& linePtr, GCNOperand
         // buggy fplit does not accept 64-bit values (high 32-bits)
         instrOpMask = (instrOpMask&~INSTROP_TYPE_MASK) | INSTROP_INT;
     
-    const cxuint optionFlags = (instrOpMask & (INSTROP_UNALIGNED|INSTROP_ACCESS_MASK));
+    const Flags optionFlags = (instrOpMask & (INSTROP_UNALIGNED|INSTROP_ACCESS_MASK));
     // fast path to parse only VGPR or SGPR
     if ((instrOpMask&~INSTROP_UNALIGNED) == INSTROP_SREGS)
         return parseSRegRange(asmr, linePtr, operand.range, arch, regsNum, regField, true,
@@ -1161,11 +1270,11 @@ bool GCNAsmUtils::parseOperand(Assembler& asmr, const char*& linePtr, GCNOperand
             toLowerString(regName);
             operand.range = {0, 0};
             
-            auto regNameTblEnd = (arch & ARCH_RXVEGA) ?
+            auto regNameTblEnd = (arch & ARCH_GCN_1_4) ?
                         ssourceNamesGCN14Tbl + ssourceNamesGCN14TblSize :
                         ssourceNamesTbl + ssourceNamesTblSize;
             auto regNameIt = binaryMapFind(
-                    (arch & ARCH_RXVEGA) ? ssourceNamesGCN14Tbl : ssourceNamesTbl,
+                    (arch & ARCH_GCN_1_4) ? ssourceNamesGCN14Tbl : ssourceNamesTbl,
                     regNameTblEnd, regName, CStringLess());
             
             // if found in table
@@ -1596,7 +1705,7 @@ bool GCNAsmUtils::parseImmWithBoolArray(Assembler& asmr, const char*& linePtr,
 }
 
 bool GCNAsmUtils::parseSingleOMODCLAMP(Assembler& asmr, const char*& linePtr,
-                    const char* modPlace, const char* mod, uint16_t arch,
+                    const char* modPlace, const char* mod, GPUArchMask arch,
                     cxbyte& mods, VOPOpModifiers& opMods, cxuint modOperands,
                     cxuint flags, bool& haveAbs, bool& haveNeg,
                     bool& alreadyModDefined, bool& good)
@@ -1748,7 +1857,7 @@ static const size_t vopSDWADSTSelNamesNum = sizeof(vopSDWADSTSelNamesMap)/
  * modifier specific for VOP_SDWA and VOP_DPP stored in extraMods structure
  * withSDWAOperands - specify number of operand for that modifier will be parsed */
 bool GCNAsmUtils::parseVOPModifiers(Assembler& asmr, const char*& linePtr,
-                uint16_t arch, cxbyte& mods, VOPOpModifiers& opMods, cxuint modOperands,
+                GPUArchMask arch, cxbyte& mods, VOPOpModifiers& opMods, cxuint modOperands,
                 VOPExtraModifiers* extraMods, cxuint flags, cxuint withSDWAOperands)
 {
     const char* end = asmr.line+asmr.lineSize;
@@ -2367,7 +2476,7 @@ bool GCNAsmUtils::parseVOPModifiers(Assembler& asmr, const char*& linePtr,
         opMods.sextMod!=0 || haveSDWA);
     const bool vopDPP = (haveDppCtrl || haveBoundCtrl || haveBankMask || haveRowMask ||
             haveDPP);
-    const bool isGCN14 = (arch & ARCH_RXVEGA) != 0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4) != 0;
     // mul/div modifier does not apply to vop3 if RXVEGA (this case will be checked later)
     const bool vop3 = (mods & ((isGCN14 ? 0 : 3)|VOP3_VOP3))!=0 ||
                 ((opMods.opselMod&15)!=0);
@@ -2533,16 +2642,16 @@ bool GCNAsmUtils::checkGCNVOPEncoding(Assembler& asmr, const char* insnPtr,
     return true;
 }
 
-bool GCNAsmUtils::checkGCNVOPExtraModifers(Assembler& asmr, uint16_t arch, bool needImm,
+bool GCNAsmUtils::checkGCNVOPExtraModifers(Assembler& asmr, GPUArchMask arch, bool needImm,
                  bool sextFlags, bool vop3, GCNVOPEnc gcnVOPEnc, const GCNOperand& src0Op,
                  VOPExtraModifiers& extraMods, const char* instrPlace)
 {
     if (needImm)
         ASM_FAIL_BY_ERROR(instrPlace, "Literal with SDWA or DPP word is illegal")
-    if ((arch & ARCH_RXVEGA)==0 && !src0Op.range.isVGPR())
+    if ((arch & ARCH_GCN_1_4)==0 && !src0Op.range.isVGPR())
         ASM_FAIL_BY_ERROR(instrPlace, "SRC0 must be a vector register with "
                     "SDWA or DPP word")
-    if ((arch & ARCH_RXVEGA)!=0 && extraMods.needDPP && !src0Op.range.isVGPR())
+    if ((arch & ARCH_GCN_1_4)!=0 && extraMods.needDPP && !src0Op.range.isVGPR())
         ASM_FAIL_BY_ERROR(instrPlace, "SRC0 must be a vector register with DPP word")
     if (vop3)
         // if VOP3 and (VOP_DPP or VOP_SDWA)
