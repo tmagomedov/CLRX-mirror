@@ -760,6 +760,7 @@ Assembler::Assembler(const CString& filename, std::istream& input, Flags _flags,
           deviceType(_deviceType),
           driverVersion(0), llvmVersion(0),
           _64bit(false), newROCmBinFormat(false),
+          llvm10BinFormat(false), rocmMetadataV3(false),
           policyVersion(ASM_POLICY_DEFAULT),
           isaAssembler(nullptr),
           // initialize global scope: adds '.' to symbols
@@ -779,6 +780,7 @@ Assembler::Assembler(const CString& filename, std::istream& input, Flags _flags,
     buggyFPLit = (flags & ASM_BUGGYFPLIT)!=0;
     macroCase = (flags & ASM_MACRONOCASE)==0;
     oldModParam = (flags & ASM_OLDMODPARAM)!=0;
+    codeFlags = ((flags & ASM_WAVE32)!=0)?ASM_CODE_WAVE32:0;
     localCount = macroCount = inclusionLevel = 0;
     macroSubstLevel = repetitionLevel = 0;
     lineAlreadyRead = false;
@@ -800,6 +802,7 @@ Assembler::Assembler(const Array<CString>& _filenames, Flags _flags,
           deviceType(_deviceType),
           driverVersion(0), llvmVersion(0),
           _64bit(false), newROCmBinFormat(false),
+          llvm10BinFormat(false), rocmMetadataV3(false),
           policyVersion(ASM_POLICY_DEFAULT),
           isaAssembler(nullptr),
           // initialize global scope: adds '.' to symbols
@@ -820,6 +823,7 @@ Assembler::Assembler(const Array<CString>& _filenames, Flags _flags,
     buggyFPLit = (flags & ASM_BUGGYFPLIT)!=0;
     macroCase = (flags & ASM_MACRONOCASE)==0;
     oldModParam = (flags & ASM_OLDMODPARAM)!=0;
+    codeFlags = ((flags & ASM_WAVE32)!=0)?ASM_CODE_WAVE32:0;
     localCount = macroCount = inclusionLevel = 0;
     macroSubstLevel = repetitionLevel = 0;
     lineAlreadyRead = false;

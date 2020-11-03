@@ -462,7 +462,7 @@ const GCNDisasmOpcodeCase decGCNOpcodeCases[] =
     { 0x7f3c14ffU, 0x40000000U, true, "        v_cvt_f16_f32   v158, "
                 "0x40000000 /* 2f */\n" },
     { 0x7f3c174fU, 0, false, "        v_cvt_f32_f16   v158, v79\n" },
-    { 0x7f3c16ffU, 0x3d4cU, true, "        v_cvt_f32_f16   v158, 0x3d4c\n" },
+    { 0x7f3c16ffU, 0x3d4cU, true, "        v_cvt_f32_f16   v158, 0x3d4c /* 1.3242h */\n" },
     { 0x7f3c194fU, 0, false, "        v_cvt_rpi_i32_f32 v158, v79\n" },
     { 0x7f3c18ffU, 0x40000000U, true, "        v_cvt_rpi_i32_f32 v158, "
                 "0x40000000 /* 2f */\n" },
@@ -1980,8 +1980,8 @@ const GCNDisasmOpcodeCase decGCNOpcodeCases[] =
                 "v71, v169, v39 offset:52583\n" },
     { 0xd844cd67U, 0x0027a947U, true, "        ds_cmpst_f32    "
                 "v71, v169, v39 offset:52583\n" },
-    { 0xd848cd67U, 0x0000a947U, true, "        ds_min_f32      v71, v169 offset:52583\n" }, 
-    { 0xd84ccd67U, 0x0000a947U, true, "        ds_max_f32      v71, v169 offset:52583\n" }, 
+    { 0xd848cd67U, 0x0000a947U, true, "        ds_min_f32      v71, v169 offset:52583\n" },
+    { 0xd84ccd67U, 0x0000a947U, true, "        ds_max_f32      v71, v169 offset:52583\n" },
     { 0xd850cd67U, 0x8b27a947U, true, "        DS_ill_20       "
                 "v71 offset:52583 vdata0=0xa9 vdata1=0x27 vdst=0x8b\n" },
     { 0xd854cd67U, 0x8b27a947U, true, "        DS_ill_21       "
@@ -2984,6 +2984,9 @@ const GCNDisasmOpcodeCase decGCNOpcodeGCN11Cases[] =
     { 0xbf990029U, 0, false, "        s_cbranch_cdbgsys_or_user .L168_0\n" },
     { 0xbf9a0029U, 0, false, "        s_cbranch_cdbgsys_and_user .L168_0\n" },
     /* SMRD encoding */
+    { 0xc219baffU, 0x13314, true, "        s_buffer_load_dword s51, s[58:61], 0x13314\n" },
+    { 0xc219baffU, 0xfd, true, "        s_buffer_load_dword s51, s[58:61], lit(253)\n" },
+    { 0xc219bbffU, 0, false, "        s_buffer_load_dword s51, s[58:61], 0xff\n" },
     { 0xc77ff023U, 0, false, "        s_dcache_inv_vol "
                 "sdst=0x7f sbase=0x38 offset=0x23\n" },
     /* VOP2 encoding (is in GCN1.1???) */

@@ -21,12 +21,15 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8.1)
 
 SET(LIBAMDBINSRC
         AmdBinaries.cpp
+        Amd3Binaries.cpp
         AmdBinGen.cpp
         AmdCL2Binaries.cpp
         AmdCL2BinGen.cpp
         ElfBinaries.cpp
         GalliumBinaries.cpp
-        ROCmBinaries.cpp)
+        ROCmBinaries.cpp
+        ROCmMetadata.cpp
+        ROCmMetadataMP.cpp)
 
 SET(LINK_LIBRARIES CLRXUtils)
 

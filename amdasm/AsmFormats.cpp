@@ -55,6 +55,8 @@ void AsmAmdHsaKernelConfig::initialize()
     debugMode = false;
     privilegedMode = false;
     dx10Clamp = false;
+    pgmRsrc3 = 0;
+    sharedVGPRsNum = BINGEN_DEFAULT;
 }
 
 AsmFormatHandler::AsmFormatHandler(Assembler& _assembler) : assembler(_assembler),
@@ -65,6 +67,9 @@ AsmFormatHandler::~AsmFormatHandler()
 { }
 
 void AsmFormatHandler::handleLabel(const CString& label)
+{ }
+
+void AsmFormatHandler::setCodeFlags(Flags codeFlags)
 { }
 
 bool AsmFormatHandler::resolveSymbol(const AsmSymbol& symbol, uint64_t& value,
@@ -185,6 +190,7 @@ void AsmKcodeHandler::restoreKcodeCurrentAllocRegs()
         KernelBase& newKernel = getKernelBase(currentKcodeKernel);
         assembler.isaAssembler->setAllocatedRegisters(newKernel.allocRegs,
                             newKernel.allocRegFlags);
+        assembler.isaAssembler->setCodeFlags(newKernel.codeFlags);
     }
 }
 
@@ -198,6 +204,7 @@ void AsmKcodeHandler::saveKcodeCurrentAllocRegs()
         const cxuint* regs = assembler.isaAssembler->getAllocatedRegisters(
                             regTypesNum, oldKernel.allocRegFlags);
         std::copy(regs, regs+regTypesNum, oldKernel.allocRegs);
+        oldKernel.codeFlags = assembler.isaAssembler->getCodeFlags();
     }
 }
 
@@ -257,16 +264,46 @@ void AsmKcodePseudoOps::updateKCodeSel(AsmKcodeHandler& handler,
     for (auto it = oldset.begin(); it != oldset.end(); ++it)
     {
         Flags curAllocRegFlags;
+        AsmKcodeHandler::KernelBase& kernel = handler.getKernelBase(*it);
         const cxuint* curAllocRegs = asmr.isaAssembler->getAllocatedRegisters(regTypesNum,
                                curAllocRegFlags);
         cxuint newAllocRegs[MAX_REGTYPES_NUM];
-        AsmKcodeHandler::KernelBase& kernel = handler.getKernelBase(*it);
         for (size_t i = 0; i < regTypesNum; i++)
             newAllocRegs[i] = std::max(curAllocRegs[i], kernel.allocRegs[i]);
         kernel.allocRegFlags |= curAllocRegFlags;
+        
         std::copy(newAllocRegs, newAllocRegs+regTypesNum, kernel.allocRegs);
     }
+    
     asmr.isaAssembler->setAllocatedRegisters();
+}
+
+void AsmKcodePseudoOps::updateCodeFlags(AsmKcodeHandler& handler,
+                      const std::vector<cxuint>& newset, const char* pseudoOpPlace)
+{
+    Assembler& asmr = handler.assembler;
+    bool first = true;
+    bool codeFlagsMismatch = false;
+    Flags curCodeFlags = 0;
+    Flags importantCodeFlags = asmr.isaAssembler->getImportantCodeFlags();
+    for (auto it = newset.begin(); it != newset.end(); ++it)
+    {
+        AsmKcodeHandler::KernelBase& kernel = handler.getKernelBase(*it);
+        if (!first && ((kernel.codeFlags ^ curCodeFlags) & importantCodeFlags) != 0)
+            codeFlagsMismatch = true;
+        kernel.codeFlags |= curCodeFlags;
+        curCodeFlags = kernel.codeFlags;
+        first = false;
+    }
+    
+    if (codeFlagsMismatch)
+    {
+        if (pseudoOpPlace!=nullptr)
+            asmr.printError(pseudoOpPlace, "Code flags mismatch for kernel set");
+        else
+            asmr.printError(AsmSourcePos(), "Code flags mismatch for kernel set");
+    }
+    asmr.isaAssembler->setCodeFlags(curCodeFlags);
 }
 
 void AsmKcodePseudoOps::doKCode(AsmKcodeHandler& handler, const char* pseudoOpPlace,
@@ -345,6 +382,7 @@ void AsmKcodePseudoOps::doKCode(AsmKcodeHandler& handler, const char* pseudoOpPl
     }
     
     updateKCodeSel(handler, handler.kcodeSelStack.top());
+    updateCodeFlags(handler, handler.kcodeSelection, pseudoOpPlace);
 }
 
 void AsmKcodePseudoOps::doKCodeEnd(AsmKcodeHandler& handler, const char* pseudoOpPlace,
@@ -374,6 +412,7 @@ void AsmKcodePseudoOps::doKCodeEnd(AsmKcodeHandler& handler, const char* pseudoO
     }
     
     handler.kcodeSelStack.pop();
+    updateCodeFlags(handler, handler.kcodeSelection, pseudoOpPlace);
     if (handler.kcodeSelStack.empty())
         handler.restoreKcodeCurrentAllocRegs();
 }

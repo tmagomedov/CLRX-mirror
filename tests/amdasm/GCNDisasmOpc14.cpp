@@ -22,7 +22,10 @@
 
 /* for Radeon RX VEGA series with GCN1.4 */
 const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[] =
-{   /* extra scalar registers */
+{   /* extra regs from GCN 1.2 */
+    { 0x80663d04U, 0, false, "        s_add_u32       flat_scratch_lo, s4, s61\n" },
+    { 0x80673d04U, 0, false, "        s_add_u32       flat_scratch_hi, s4, s61\n" },
+    /* extra scalar registers */
     { 0x80153debU, 0, false, "        s_add_u32       s21, shared_base, s61\n" },
     { 0x8015eb04U, 0, false, "        s_add_u32       s21, s4, shared_base\n" },
     { 0x80153decU, 0, false, "        s_add_u32       s21, shared_limit, s61\n" },
@@ -91,6 +94,8 @@ const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[] =
                 "sendmsg(early_prim_dealloc, cut, 0)\n" },
     { 0xbf900019U, 0, false, "        s_sendmsg       sendmsg(gs_alloc_req, cut, 0)\n" },
     { 0xbf90001aU, 0, false, "        s_sendmsg       sendmsg(get_doorbell, cut, 0)\n" },
+    { 0xbf900014U, 0, false, "        s_sendmsg       sendmsg(savewave, cut, 0)\n" },
+    { 0xbf900004U, 0, false, "        s_sendmsg       sendmsg(savewave)\n" },
     /* waitcnts */
     { 0xbf8c0d36U, 0, false, "        s_waitcnt       "
         "vmcnt(6) & expcnt(3) & lgkmcnt(13)\n" },
@@ -477,6 +482,8 @@ const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[] =
     { 0xd8b2cd67U, 0x8b000047U, true,
         "        ds_read_i8_d16_hi v139, v71 offset:52583\n" },
     { 0xd8b4cd67U, 0x8b000047U, true, "        ds_read_u16_d16 v139, v71 offset:52583\n" },
+    { 0xd8b6cd67U, 0x8b000047U, true,
+        "        ds_read_u16_d16_hi v139, v71 offset:52583\n" },
     { 0xd96ccd67U, 0x8b000000U, true, "        ds_read_addtid_b32 v139 offset:52583\n" },
     /* MUBUF instructions */
     { 0xe067725bU, 0x23343d12U, true, "        buffer_store_byte_d16_hi "
@@ -551,6 +558,41 @@ const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[] =
             "v[157:160], v[121:124], s[84:91], s[0:3] dmask:11 unorm glc a16 da\n" },
     { 0xf12cfb00U, 0x00159d79U, true, "        image_gather8h_pck "
             "v[157:160], v[121:124], s[84:91], s[0:3] dmask:11 unorm glc a16 da\n" },
+    { 0xf2026f00U, 0x00159d79U, true, "        image_load      "
+            "v[157:160], v[121:124], s[84:91] dmask:15 glc slc lwe da\n" },
+    // DMASK D16
+    { 0xf2026000U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:0 glc slc lwe da d16\n" },
+    { 0xf2026100U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] glc slc lwe da d16\n" },
+    { 0xf2026200U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:2 glc slc lwe da d16\n" },
+    { 0xf2026300U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:3 glc slc lwe da d16\n" },
+    { 0xf2026400U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:4 glc slc lwe da d16\n" },
+    { 0xf2026500U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:5 glc slc lwe da d16\n" },
+    { 0xf2026600U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:6 glc slc lwe da d16\n" },
+    { 0xf2026700U, 0x80159d79U, true, "        image_load      "
+            "v[157:158], v[121:124], s[84:91] dmask:7 glc slc lwe da d16\n" },
+    { 0xf2026800U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:8 glc slc lwe da d16\n" },
+    { 0xf2026900U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:9 glc slc lwe da d16\n" },
+    { 0xf2026a00U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:10 glc slc lwe da d16\n" },
+    { 0xf2026b00U, 0x80159d79U, true, "        image_load      "
+            "v[157:158], v[121:124], s[84:91] dmask:11 glc slc lwe da d16\n" },
+    { 0xf2026c00U, 0x80159d79U, true, "        image_load      "
+            "v157, v[121:124], s[84:91] dmask:12 glc slc lwe da d16\n" },
+    { 0xf2026d00U, 0x80159d79U, true, "        image_load      "
+            "v[157:158], v[121:124], s[84:91] dmask:13 glc slc lwe da d16\n" },
+    { 0xf2026e00U, 0x80159d79U, true, "        image_load      "
+            "v[157:158], v[121:124], s[84:91] dmask:14 glc slc lwe da d16\n" },
+    { 0xf2026f00U, 0x80159d79U, true, "        image_load      "
+            "v[157:158], v[121:124], s[84:91] dmask:15 glc slc lwe da d16\n" },
     /* FLAT encoding */
     { 0xdc400000U, 0x2f8000bbU, true, "        flat_load_ubyte v47, v[187:188] nv\n" },
     { 0xdc400000U, 0x2f0000bbU, true, "        flat_load_ubyte v47, v[187:188]\n" },
@@ -745,6 +787,10 @@ const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[] =
 /* for VEGA 20 series with GCN1.4.1 */
 const GCNDisasmOpcodeCase decGCNOpcodeGCN141Cases[] =
 {
+    /* extra regs from GCN 1.2 */
+    { 0x80663d04U, 0, false, "        s_add_u32       flat_scratch_lo, s4, s61\n" },
+    { 0x80673d04U, 0, false, "        s_add_u32       flat_scratch_hi, s4, s61\n" },
+    //
     { 0xd3a04037U, 0x1f974d4fU, true, "        v_fma_mix_f32   v55, v79, v166, v229\n" },
     { 0xd3a14037U, 0x1f974d4fU, true, "        v_fma_mixlo_f16 v55, v79, v166, v229\n" },
     { 0xd3a24037U, 0x1f974d4fU, true, "        v_fma_mixhi_f16 v55, v79, v166, v229\n" },

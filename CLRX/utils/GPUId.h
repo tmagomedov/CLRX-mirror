@@ -80,7 +80,10 @@ enum class GPUDeviceType: cxbyte
     GFX905,
     GFX906,
     GFX907,
-    GPUDEVICE_MAX = GFX907,    ///< last value
+    GFX1000,
+    GFX1010,
+    GFX1011,
+    GPUDEVICE_MAX = GFX1011,    ///< last value
     
     RADEON_HD7700 = CAPE_VERDE, ///< Radeon HD7700
     RADEON_HD7800 = PITCAIRN,   ///< Radeon HD7800
@@ -98,7 +101,9 @@ enum class GPUArchitecture: cxbyte
     GCN1_2,     ///< third iteration (Radeon Rx 300 series and Tonga)
     GCN1_4,     ///< GFX9 architecture (AMD RX VEGA)
     GCN1_4_1,    ///< GFX9 architecture with NN extensions (AMD VEGA 20)
-    GPUARCH_MAX = GCN1_4_1    /// last value
+    GCN1_5,     ///< GFX10 architecture (AMD NAVI)
+    GCN1_5_1,   ///< GFX1011 architecture (AMD NAVI DLOPS)
+    GPUARCH_MAX = GCN1_5_1    /// last value
 };
 
 /// GPU architecture mask (one bit represents single GPU architecture)
@@ -115,11 +120,21 @@ enum : GPUArchMask
     ARCH_RX3X0 = 4,
     ARCH_RXVEGA = 8,
     ARCH_VEGA20 = 16,
+    ARCH_NAVI = 32,
+    ARCH_NAVI_DL = 64,
     ARCH_GCN_1_0_1 = 0x3,
     ARCH_GCN_1_1_2 = 0x6,
+    ARCH_GCN_1_1_5 = 0x62,
     ARCH_GCN_1_1_2_4 = 0x1e,
+    ARCH_GCN_1_0_1_2_4 = 0x1f,
     ARCH_GCN_1_2_4 = 0x1c,
     ARCH_GCN_1_4 = 0x18,
+    ARCH_GCN_1_5 = 0x60,
+    ARCH_GCN_1_5_1 = 0x40,
+    ARCH_GCN_1_1_2_4_5 = 0x7e,
+    ARCH_GCN_1_2_4_5 = 0x7c,
+    ARCH_GCN_1_4_5 = 0x78,
+    ARCH_GCN_1_0_1_5 = 0x63,
     ARCH_GCN_ALL = 0xffff
 };
 
@@ -160,7 +175,8 @@ enum : Flags
 {
     GCN_VCC = 1,
     GCN_FLAT = 2,
-    GCN_XNACK = 4
+    GCN_XNACK = 4,
+    GCN_REG_WAVE32 = 8
 };
 
 enum: Flags {
@@ -178,6 +194,9 @@ extern cxuint getGPUMaxRegistersNum(GPUArchitecture architecture, cxuint regType
 
 /// get maximum available registers for GPU (type: 0 - scalar, 1 - vector)
 extern cxuint getGPUMaxRegsNumByArchMask(GPUArchMask archMask, cxuint regType);
+
+/// get maximum available addressable registers for GPU (type: 0 - scalar, 1 - vector)
+extern cxuint getGPUMaxAddrRegsNumByArchMask(GPUArchMask archMask, cxuint regType);
 
 /// get maximum number of scalar register + extra scalar reg (VCC, FLAT_SCRATCH, ...)
 extern bool isSpecialSGPRRegister(GPUArchMask archMask, cxuint index);
@@ -217,6 +236,7 @@ extern uint32_t calculatePgmRSrc2(GPUArchitecture arch, bool scratchEn, cxuint u
             bool trapPresent, cxuint dimMask, cxuint defDimValues, bool tgSizeEn,
             cxuint ldsSize, cxuint exceptions);
 
+extern uint32_t calculatePgmRSrc3(GPUArchitecture arch, cxuint sharedVgprsNum);
 
 /// ADMGPUArchValues table type
 enum class GPUArchVersionTable: cxuint

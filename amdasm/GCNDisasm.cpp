@@ -66,7 +66,7 @@ static const char* gcnEncodingNames[GCNENC_MAXVAL+1] =
 
 // table hold of GNC encoding regions in main instruction list
 // instruciton position is sum of encoding offset and instruction opcode
-static const GCNEncodingSpace gcnInstrTableByCodeSpaces[2*(GCNENC_MAXVAL+1)+2+3+2] =
+static const GCNEncodingSpace gcnInstrTableByCodeSpaces[] =
 {
     { 0, 0 },
     { 0, 0x80 }, /* GCNENC_SOPC, opcode = (7bit)<<16 */
@@ -112,11 +112,37 @@ static const GCNEncodingSpace gcnInstrTableByCodeSpaces[2*(GCNENC_MAXVAL+1)+2+3+
     { 0x1862, 0x400 }, /* GCNENC_VOP3B, opcode = (10bit)<<17  (RXVEGA) */
     { 0x1c62, 0x100 }, /* GCNENC_VOP1, opcode = (8bit)<<9 (RXVEGA) */
     { 0x1d62, 0x80 }, /* GCNENC_FLAT_SCRATCH, opcode = (8bit)<<18 (???8bit) RXVEGA */
-    { 0x1de2, 0x80 }  /* GCNENC_FLAT_GLOBAL, opcode = (8bit)<<18 (???8bit) RXVEGA */
+    { 0x1de2, 0x80 },  /* GCNENC_FLAT_GLOBAL, opcode = (8bit)<<18 (???8bit) RXVEGA */
+    // GFX10 -
+    { 0x1e62+0, 0x80 }, /* GCNENC_SOPC, opcode = (7bit)<<16 */
+    { 0x1e62+0x0080, 0x80 }, /* GCNENC_SOPP, opcode = (7bit)<<16 */
+    { 0x1e62+0x0100, 0x100 }, /* GCNENC_SOP1, opcode = (8bit)<<8 */
+    { 0x1e62+0x0200, 0x80 }, /* GCNENC_SOP2, opcode = (7bit)<<23 */
+    { 0x1e62+0x0280, 0x20 }, /* GCNENC_SOPK, opcode = (5bit)<<23 */
+    { 0x1e62+0x02a0, 0x100 }, /* GCNENC_SMRD, opcode = (6bit)<<22 */
+    { 0x1e62+0x03a0, 0x100 }, /* GCNENC_VOPC, opcode = (8bit)<<27 */
+    { 0x1e62+0x04a0, 0x100 }, /* GCNENC_VOP1, opcode = (8bit)<<9 */
+    { 0x1e62+0x05a0, 0x40 }, /* GCNENC_VOP2, opcode = (6bit)<<25 */
+    { 0x1e62+0x05e0, 0x400 }, /* GCNENC_VOP3A, opcode = (9bit)<<17 */
+    { 0x1e62+0x05e0, 0x400 }, /* GCNENC_VOP3B, opcode = (9bit)<<17 */
+    { 0x1e62+0x09e0, 0x4 }, /* GCNENC_VINTRP, opcode = (2bit)<<16 */
+    { 0x1e62+0x09e4, 0x100 }, /* GCNENC_DS, opcode = (8bit)<<18 */
+    { 0x1e62+0x0ae4, 0x80 }, /* GCNENC_MUBUF, opcode = (7bit)<<18 */
+    { 0x1e62+0x0b64, 0x10 }, /* GCNENC_MTBUF, opcode = (3bit)<<16 */
+    { 0x1e62+0x0b74, 0x80 }, /* GCNENC_MIMG, opcode = (7bit)<<18 */
+    { 0x1e62+0x0bf4, 0x1 }, /* GCNENC_EXP, opcode = none */
+    { 0x1e62+0x0bf5, 0x80 }, /* GCNENC_FLAT, opcode = (8bit)<<18 (???8bit) */
+    { 0x1e62+0x0c75, 0x80 }, /* GCNENC_VOP3P */
+    { 0x1e62+0x0cf5, 0x80 }, /* GCNENC_FLAT_SCRATCH, opcode = (8bit)<<18 (???8bit) */
+    { 0x1e62+0x0d75, 0x80 }, /* GCNENC_FLAT_GLOBAL, opcode = (8bit)<<18 (???8bit) */
 };
 
 // total instruction table length
-static const size_t gcnInstrTableByCodeLength = 0x1e62;
+static const size_t gcnInstrTableByCodeLength = 0x1e62 + 0x0df5;
+
+enum: cxuint {
+    GCN_GFX10_ENCSPACE_IDX = 44
+};
 
 // create main instruction table
 static void initializeGCNDisassembler()
@@ -178,6 +204,31 @@ static void initializeGCNDisassembler()
             }
             // otherwise we ignore this entry
         }
+        
+        if ((instr.archMask & ARCH_GCN_1_5) != 0)
+        {
+            if (instr.encoding != GCNENC_FLAT || (instr.mode & GCN_FLAT_MODEMASK) == 0)
+            {
+                const GCNEncodingSpace& encSpace = gcnInstrTableByCodeSpaces[
+                            GCN_GFX10_ENCSPACE_IDX + instr.encoding];
+                if (gcnInstrTableByCode[encSpace.offset + instr.code].mnemonic == nullptr ||
+                    ((instr.archMask == ARCH_GCN_1_5) &&
+                    (gcnInstrTableByCode[encSpace.offset + instr.code].archMask) !=
+                            ARCH_GCN_1_5))
+                    gcnInstrTableByCode[encSpace.offset + instr.code] = instr;
+            }
+            else
+            {
+                const cxuint encFlatMode = (instr.mode & GCN_FLAT_MODEMASK);
+                const GCNEncodingSpace& encSpace = gcnInstrTableByCodeSpaces[
+                            GCN_GFX10_ENCSPACE_IDX + GCNENC_VOP3P + encFlatMode];
+                if (gcnInstrTableByCode[encSpace.offset + instr.code].mnemonic == nullptr ||
+                    ((instr.archMask == ARCH_GCN_1_5) &&
+                    (gcnInstrTableByCode[encSpace.offset + instr.code].archMask) !=
+                            ARCH_GCN_1_5))
+                    gcnInstrTableByCode[encSpace.offset + instr.code] = instr;
+            }
+        }
     }
 }
 
@@ -190,47 +241,74 @@ GCNDisassembler::GCNDisassembler(Disassembler& disassembler)
 GCNDisassembler::~GCNDisassembler()
 { }
 
+enum : cxbyte
+{
+    GCNENCSCH_1DWORD = 0,
+    GCNENCSCH_2DWORD,
+    GCNENCSCH_MIMG_DWORDS
+};
+
 // gcn encoding sizes table: true - if 8 byte encoding, false - 4 byte encoding
 // for GCN1.0/1.1
-static const bool gcnSize11Table[16] =
+static const cxbyte gcnSize11Table[16] =
 {
-    false, // GCNENC_SMRD, // 0000
-    false, // GCNENC_SMRD, // 0001
-    false, // GCNENC_VINTRP, // 0010
-    false, // GCNENC_NONE, // 0011 - illegal
-    true,  // GCNENC_VOP3A, // 0100
-    false, // GCNENC_NONE, // 0101 - illegal
-    true,  // GCNENC_DS,   // 0110
-    true,  // GCNENC_FLAT, // 0111
-    true,  // GCNENC_MUBUF, // 1000
-    false, // GCNENC_NONE,  // 1001 - illegal
-    true,  // GCNENC_MTBUF, // 1010
-    false, // GCNENC_NONE,  // 1011 - illegal
-    true,  // GCNENC_MIMG,  // 1100
-    false, // GCNENC_NONE,  // 1101 - illegal
-    true,  // GCNENC_EXP,   // 1110
-    false // GCNENC_NONE   // 1111 - illegal
+    GCNENCSCH_1DWORD, // GCNENC_SMRD, // 0000
+    GCNENCSCH_1DWORD, // GCNENC_SMRD, // 0001
+    GCNENCSCH_1DWORD, // GCNENC_VINTRP, // 0010
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0011 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_VOP3A, // 0100
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0101 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_DS,   // 0110
+    GCNENCSCH_2DWORD,  // GCNENC_FLAT, // 0111
+    GCNENCSCH_2DWORD,  // GCNENC_MUBUF, // 1000
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1001 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_MTBUF, // 1010
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1011 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_MIMG,  // 1100
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1101 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_EXP,   // 1110
+    GCNENCSCH_1DWORD // GCNENC_NONE   // 1111 - illegal
 };
 
 // for GCN1.2/1.4
-static const bool gcnSize12Table[16] =
+static const cxbyte gcnSize12Table[16] =
 {
-    true,  // GCNENC_SMEM, // 0000
-    true,  // GCNENC_EXP, // 0001
-    false, // GCNENC_NONE, // 0010 - illegal
-    false, // GCNENC_NONE, // 0011 - illegal
-    true,  // GCNENC_VOP3A, // 0100
-    false, // GCNENC_VINTRP, // 0101
-    true,  // GCNENC_DS,   // 0110
-    true,  // GCNENC_FLAT, // 0111
-    true,  // GCNENC_MUBUF, // 1000
-    false, // GCNENC_NONE,  // 1001 - illegal
-    true,  // GCNENC_MTBUF, // 1010
-    false, // GCNENC_NONE,  // 1011 - illegal
-    true,  // GCNENC_MIMG,  // 1100
-    false, // GCNENC_NONE,  // 1101 - illegal
-    false, // GCNENC_NONE,  // 1110 - illegal
-    false // GCNENC_NONE   // 1111 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_SMEM, // 0000
+    GCNENCSCH_2DWORD,  // GCNENC_EXP, // 0001
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0010 - illegal
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0011 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_VOP3A, // 0100
+    GCNENCSCH_1DWORD, // GCNENC_VINTRP, // 0101
+    GCNENCSCH_2DWORD,  // GCNENC_DS,   // 0110
+    GCNENCSCH_2DWORD,  // GCNENC_FLAT, // 0111
+    GCNENCSCH_2DWORD,  // GCNENC_MUBUF, // 1000
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1001 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_MTBUF, // 1010
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1011 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_MIMG,  // 1100
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1101 - illegal
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1110 - illegal
+    GCNENCSCH_1DWORD // GCNENC_NONE   // 1111 - illegal
+};
+
+static const cxbyte gcnSize15Table[16] =
+{
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0000
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0001
+    GCNENCSCH_1DWORD, // CNENC_VINTRP, // 0010
+    GCNENCSCH_2DWORD,  // GCNENC_VOP3P, // 0011
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 0100
+    GCNENCSCH_2DWORD,  // GCNENC_VOP3A, // 0101
+    GCNENCSCH_2DWORD,  // GCNENC_DS,   // 0110
+    GCNENCSCH_2DWORD,  // GCNENC_FLAT, // 0111
+    GCNENCSCH_2DWORD,  // GCNENC_MUBUF, // 1000
+    GCNENCSCH_1DWORD, // GCNENC_NONE, // 1001 - illegal
+    GCNENCSCH_2DWORD,  // GCNENC_MTBUF, // 1010
+    GCNENCSCH_1DWORD, // GCNENC_NONE,  // 1011 - illegal
+    GCNENCSCH_MIMG_DWORDS,  // GCNENC_MIMG,  // 1100
+    GCNENCSCH_2DWORD,  // GCNENC_SMEM,  // 1101
+    GCNENCSCH_2DWORD,  // GCNENC_EXP,   // 1110
+    GCNENCSCH_1DWORD // GCNENC_NONE   // 1111 - illegal
 };
 
 void GCNDisassembler::analyzeBeforeDisassemble()
@@ -242,7 +320,8 @@ void GCNDisassembler::analyzeBeforeDisassemble()
                 disassembler.getDeviceType());
     const bool isGCN11 = (arch == GPUArchitecture::GCN1_1);
     const bool isGCN12 = (arch >= GPUArchitecture::GCN1_2);
-    const bool isGCN14 = (arch == GPUArchitecture::GCN1_4);
+    const bool isGCN14 = (arch == GPUArchitecture::GCN1_4 || arch == GPUArchitecture::GCN1_4_1);
+    const bool isGCN15 = (arch >= GPUArchitecture::GCN1_5 || arch == GPUArchitecture::GCN1_5_1);
     size_t pos;
     for (pos = 0; pos < codeWordsNum; pos++)
     {
@@ -287,11 +366,13 @@ void GCNDisassembler::analyzeBeforeDisassemble()
                         const cxuint opcode = (insnCode>>23)&0x1f;
                         if ((!isGCN12 && opcode == 17) ||
                             (isGCN12 && opcode == 16) || // if branch fork
-                            (isGCN14 && opcode == 21)) // if s_call_b64
+                            (isGCN14 && opcode == 21) || // if s_call_b64
+                            (isGCN15 && (opcode == 22 ||
+                                opcode == 27 || opcode == 28))) // if s_subvector_loop_*
                             labels.push_back(startOffset +
                                     ((pos+int16_t(insnCode&0xffff)+1)<<2));
-                        else if ((!isGCN12 && opcode == 21) ||
-                            (isGCN12 && opcode == 20))
+                        else if (((!isGCN12 || isGCN15) && opcode == 21) ||
+                            (isGCN12 && !isGCN15 && opcode == 20))
                             pos++; // additional literal
                     }
                 }
@@ -306,28 +387,48 @@ void GCNDisassembler::analyzeBeforeDisassemble()
             {
                 // SMRD and others
                 const uint32_t encPart = (insnCode&0x3c000000U)>>26;
-                if ((!isGCN12 && gcnSize11Table[encPart] && (encPart != 7 || isGCN11)) ||
+                if (isGCN15)
+                {
+                    if (gcnSize15Table[encPart]==GCNENCSCH_MIMG_DWORDS)
+                        pos += ((insnCode>>1)&3) + 1;
+                    else if (gcnSize15Table[encPart])
+                        pos++;
+                }
+                else if (isGCN11 && encPart==0 && (insnCode&0x1ff)==0xff)
+                    pos++;
+                else if ((!isGCN12 && gcnSize11Table[encPart] && (encPart != 7 || isGCN11)) ||
                     (isGCN12 && gcnSize12Table[encPart]))
                     pos++;
+                if (isGCN15 && (encPart==3 || encPart==5))
+                {
+                    // include VOP3 literal
+                    const uint32_t insnCode2 = ULEV(codeWords[pos]);
+                    if ((insnCode2 & 0x1ff) == 0xff || ((insnCode2>>9) & 0x1ff) == 0xff ||
+                        ((insnCode2>>18) & 0x1ff) == 0xff)
+                        pos++;
+                }
             }
         }
         else
         {
+            uint32_t src0 = (insnCode&0x1ff);
             // some vector instructions
             if ((insnCode & 0x7e000000U) == 0x7c000000U)
             {
                 // VOPC
-                if ((insnCode&0x1ff) == 0xff || // literal
-                    // SDWA, DDP
-                    (isGCN12 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                if (src0 == 0xff || // literal
+                    // SDWA, DPP
+                    (isGCN12 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                     pos++;
             }
             else if ((insnCode & 0x7e000000U) == 0x7e000000U)
             {
                 // VOP1
-                if ((insnCode&0x1ff) == 0xff || // literal
-                    // SDWA, DDP
-                    (isGCN12 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                if (src0 == 0xff || // literal
+                    // SDWA, DPP
+                    (isGCN12 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                     pos++;
             }
             else
@@ -335,12 +436,16 @@ void GCNDisassembler::analyzeBeforeDisassemble()
                 // VOP2
                 const cxuint opcode = (insnCode >> 25)&0x3f;
                 if ((!isGCN12 && (opcode == 32 || opcode == 33)) ||
-                    (isGCN12 && (opcode == 23 || opcode == 24 ||
-                    opcode == 36 || opcode == 37))) // V_MADMK and V_MADAK
+                    (isGCN12 && !isGCN15 && (opcode == 23 || opcode == 24 ||
+                    opcode == 36 || opcode == 37)) ||
+                    (isGCN15 && (opcode == 32 || opcode == 33 || // V_MADMK and V_MADAK
+                        opcode == 44 || opcode == 45 || // V_FMAMK_F32, V_FMAAK_F32
+                        opcode == 55 || opcode == 56))) // V_FMAMK_F16, V_FMAAK_F16
                     pos++;  // inline 32-bit constant
-                else if ((insnCode&0x1ff) == 0xff || // literal
-                    // SDWA, DDP
-                    (isGCN12 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                else if (src0 == 0xff || // literal
+                    // SDWA, DPP
+                    (isGCN12 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                     pos++;  // literal
             }
         }
@@ -389,11 +494,33 @@ static const cxbyte gcnEncoding12Table[16] =
     GCNENC_NONE   // 1111 - illegal
 };
 
+static const cxbyte gcnEncoding15Table[16] =
+{
+    GCNENC_NONE, // 0000
+    GCNENC_NONE, // 0001
+    GCNENC_VINTRP, // 0010
+    GCNENC_VOP3P, // 0011
+    GCNENC_NONE, // 0100
+    GCNENC_VOP3A, // 0101
+    GCNENC_DS,   // 0110
+    GCNENC_FLAT, // 0111
+    GCNENC_MUBUF, // 1000
+    GCNENC_NONE, // 1001 - illegal
+    GCNENC_MTBUF, // 1010
+    GCNENC_NONE,  // 1011 - illegal
+    GCNENC_MIMG,  // 1100
+    GCNENC_SMEM,  // 1101
+    GCNENC_EXP,   // 1110
+    GCNENC_NONE   // 1111 - illegal
+};
+
 
 struct CLRX_INTERNAL GCNEncodingOpcodeBits
 {
     cxbyte bitPos;
     cxbyte bits;
+    cxbyte bitPos2;
+    cxbyte bits2;
 };
 
 // table of opcode positions in encoding (GCN1.0/1.1)
@@ -444,6 +571,30 @@ static const GCNEncodingOpcodeBits gcnEncodingOpcode12Table[GCNENC_MAXVAL+1] =
     { 18, 7 } /* GCNENC_FLAT, opcode = (8bit)<<18 (???8bit) */
 };
 
+// table of opcode positions in encoding (GCN1.5)
+static const GCNEncodingOpcodeBits gcnEncodingOpcode15Table[GCNENC_MAXVAL+2] =
+{
+    { 0, 0 },
+    { 16, 7 }, /* GCNENC_SOPC, opcode = (7bit)<<16 */
+    { 16, 7 }, /* GCNENC_SOPP, opcode = (7bit)<<16 */
+    { 8, 8 }, /* GCNENC_SOP1, opcode = (8bit)<<8 */
+    { 23, 7 }, /* GCNENC_SOP2, opcode = (7bit)<<23 */
+    { 23, 5 }, /* GCNENC_SOPK, opcode = (5bit)<<23 */
+    { 18, 8 }, /* GCNENC_SMEM, opcode = (8bit)<<18 */
+    { 17, 8 }, /* GCNENC_VOPC, opcode = (8bit)<<17 */
+    { 9, 8 }, /* GCNENC_VOP1, opcode = (8bit)<<9 */
+    { 25, 6 }, /* GCNENC_VOP2, opcode = (6bit)<<25 */
+    { 16, 10 }, /* GCNENC_VOP3A, opcode = (10bit)<<16 */
+    { 16, 10 }, /* GCNENC_VOP3B, opcode = (10bit)<<16 */
+    { 16, 2 }, /* GCNENC_VINTRP, opcode = (2bit)<<16 */
+    { 18, 8 }, /* GCNENC_DS, opcode = (8bit)<<18 */
+    { 18, 7 }, /* GCNENC_MUBUF, opcode = (7bit)<<18 */
+    { 16, 3, 53, 1 }, /* GCNENC_MTBUF, opcode = (4bit)<<15 */ // 53-bit opcode
+    { 18, 7 }, /* GCNENC_MIMG, opcode = (7bit)<<18 */
+    { 0, 0 }, /* GCNENC_EXP, opcode = none */
+    { 18, 7 }, /* GCNENC_FLAT, opcode = (8bit)<<18 (???8bit) */
+    { 16, 7 } /* GCNENC_VOP3P, opcode = (7bit)<<16 */
+};
 
 /* main routine */
 
@@ -467,7 +618,8 @@ void GCNDisassembler::disassemble()
     // set up GCN indicators
     const bool isGCN11 = (arch == GPUArchitecture::GCN1_1);
     const bool isGCN124 = (arch >= GPUArchitecture::GCN1_2);
-    const bool isGCN14 = (arch >= GPUArchitecture::GCN1_4);
+    const bool isGCN14 = (arch == GPUArchitecture::GCN1_4 || arch == GPUArchitecture::GCN1_4_1);
+    const bool isGCN15 = (arch == GPUArchitecture::GCN1_5 || arch >= GPUArchitecture::GCN1_5_1);
     const GPUArchMask curArchMask = 
             1U<<int(getGPUArchitectureFromDeviceType(disassembler.getDeviceType()));
     const size_t codeWordsNum = (inputSize>>2);
@@ -508,7 +660,9 @@ void GCNDisassembler::disassemble()
             continue;
         }
         uint32_t insnCode2 = 0;
-        
+        uint32_t insnCode3 = 0;
+        uint32_t insnCode4 = 0;
+        uint32_t insnCode5 = 0;
         
         /* determine GCN encoding */
         if ((insnCode & 0x80000000U) != 0)
@@ -547,8 +701,8 @@ void GCNDisassembler::disassemble()
                     {
                         gcnEncoding = GCNENC_SOPK;
                         const uint32_t opcode = ((insnCode>>23)&0x1f);
-                        if ((!isGCN124 && opcode == 21) ||
-                            (isGCN124 && opcode == 20))
+                        if (((!isGCN124 || isGCN15) && opcode == 21) ||
+                            (isGCN124 && !isGCN15 && opcode == 20))
                         {
                             if (pos < codeWordsNum)
                                 insnCode2 = ULEV(codeWords[pos++]);
@@ -571,13 +725,48 @@ void GCNDisassembler::disassemble()
             {
                 // SMRD and others
                 const uint32_t encPart = (insnCode&0x3c000000U)>>26;
-                if ((!isGCN124 && gcnSize11Table[encPart] && (encPart != 7 || isGCN11)) ||
+                if (isGCN15)
+                {
+                    if (gcnSize15Table[encPart]==GCNENCSCH_MIMG_DWORDS)
+                    {
+                        cxuint extraDwords = ((insnCode>>1)&3) + 1;
+                        if (pos+extraDwords <= codeWordsNum)
+                        {
+                            if (extraDwords>=1)
+                                insnCode2 = ULEV(codeWords[pos]);
+                            if (extraDwords>=2)
+                                insnCode3 = ULEV(codeWords[pos+1]);
+                            if (extraDwords>=3)
+                                insnCode4 = ULEV(codeWords[pos+2]);
+                            if (extraDwords>=4)
+                                insnCode5 = ULEV(codeWords[pos+3]);
+                            pos += extraDwords;
+                        }
+                    }
+                    if (gcnSize15Table[encPart] && pos < codeWordsNum)
+                        insnCode2 = ULEV(codeWords[pos++]);
+                    if (isGCN15 && (encPart==3 || encPart==5))
+                    {
+                        // include VOP3 literal
+                        if ((insnCode2 & 0x1ff) == 0xff || ((insnCode2>>9) & 0x1ff) == 0xff ||
+                            ((insnCode2>>18) & 0x1ff) == 0xff)
+                            insnCode3 = ULEV(codeWords[pos++]);
+                    }
+                }
+                else if (isGCN11 && encPart==0 && (insnCode&0x1ff)==0xff)
+                {
+                    if (pos < codeWordsNum)
+                        insnCode2 = ULEV(codeWords[pos++]);
+                }
+                else if ((!isGCN124 && gcnSize11Table[encPart] && (encPart != 7 || isGCN11)) ||
                     (isGCN124 && gcnSize12Table[encPart]))
                 {
                     if (pos < codeWordsNum)
                         insnCode2 = ULEV(codeWords[pos++]);
                 }
-                if (isGCN124)
+                if (isGCN15)
+                    gcnEncoding = gcnEncoding15Table[encPart];
+                else if (isGCN124)
                     gcnEncoding = gcnEncoding12Table[encPart];
                 else
                     gcnEncoding = gcnEncoding11Table[encPart];
@@ -588,12 +777,14 @@ void GCNDisassembler::disassemble()
         else
         {
             // some vector instructions
+            const uint32_t src0 = (insnCode&0x1ff);
             if ((insnCode & 0x7e000000U) == 0x7c000000U)
             {
                 // VOPC
-                if ((insnCode&0x1ff) == 0xff || // literal
-                    // SDWA, DDP
-                    (isGCN124 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                if (src0 == 0xff || // literal
+                    // SDWA, DPP
+                    (isGCN124 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                 {
                     if (pos < codeWordsNum)
                         insnCode2 = ULEV(codeWords[pos++]);
@@ -603,9 +794,10 @@ void GCNDisassembler::disassemble()
             else if ((insnCode & 0x7e000000U) == 0x7e000000U)
             {
                 // VOP1
-                if ((insnCode&0x1ff) == 0xff || // literal
-                    // SDWA, DDP
-                    (isGCN124 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                if (src0 == 0xff || // literal
+                    // SDWA, DPP
+                    (isGCN124 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                 {
                     if (pos < codeWordsNum)
                         insnCode2 = ULEV(codeWords[pos++]);
@@ -617,15 +809,19 @@ void GCNDisassembler::disassemble()
                 // VOP2
                 const cxuint opcode = (insnCode >> 25)&0x3f;
                 if ((!isGCN124 && (opcode == 32 || opcode == 33)) ||
-                    (isGCN124 && (opcode == 23 || opcode == 24 ||
-                    opcode == 36 || opcode == 37))) // V_MADMK and V_MADAK
+                    (isGCN124 && !isGCN15 && (opcode == 23 || opcode == 24 ||
+                    opcode == 36 || opcode == 37)) ||
+                    (isGCN15 && (opcode == 32 || opcode == 33 || // V_MADMK and V_MADAK
+                        opcode == 44 || opcode == 45 || // V_FMAMK_F32, V_FMAAK_F32
+                        opcode == 55 || opcode == 56))) // V_MADMK and V_MADAK
                 {
                     if (pos < codeWordsNum)
                         insnCode2 = ULEV(codeWords[pos++]);
                 }
-                else if ((insnCode&0x1ff) == 0xff || // literal
+                else if (src0 == 0xff || // literal
                     // SDWA, DDP
-                    (isGCN124 && ((insnCode&0x1ff) == 0xf9 || (insnCode&0x1ff) == 0xfa)))
+                    (isGCN124 && (src0 == 0xf9 || src0 == 0xfa)) ||
+                    (isGCN15 && (src0 == 0xe9 || src0 == 0xea)))
                 {
                     if (pos < codeWordsNum)
                         insnCode2 = ULEV(codeWords[pos++]);
@@ -686,6 +882,13 @@ void GCNDisassembler::disassemble()
             }
         }
         
+        if (isGCN15 && gcnEncoding == GCNENC_VOP3P && (insnCode & 0x3000000U)!=0)
+        {
+            // unknown encoding
+            gcnEncoding = GCNENC_NONE;
+            pos--;
+        }
+        
         if (gcnEncoding == GCNENC_NONE)
         {
             // invalid encoding
@@ -701,16 +904,29 @@ void GCNDisassembler::disassemble()
         }
         else
         {
-            const GCNEncodingOpcodeBits* encodingOpcodeTable = 
-                    (isGCN124) ? gcnEncodingOpcode12Table : gcnEncodingOpcodeTable;
-            const cxuint opcode =
+            const GCNEncodingOpcodeBits* encodingOpcodeTable =
+                    (isGCN15) ? gcnEncodingOpcode15Table :
+                    ((isGCN124) ? gcnEncodingOpcode12Table : gcnEncodingOpcodeTable);
+            cxuint opcode =
                     (insnCode>>encodingOpcodeTable[gcnEncoding].bitPos) & 
                     ((1U<<encodingOpcodeTable[gcnEncoding].bits)-1U);
+            if (encodingOpcodeTable[gcnEncoding].bitPos2!=0)
+            {
+                // next bits in opcode
+                cxuint val = 0;
+                if (encodingOpcodeTable[gcnEncoding].bitPos2>=32)
+                    val = (insnCode2>>(encodingOpcodeTable[gcnEncoding].bitPos2-32));
+                else
+                    val = insnCode2>>(encodingOpcodeTable[gcnEncoding].bitPos2);
+                opcode |= (val&((1U<<encodingOpcodeTable[gcnEncoding].bits2)-1U)) <<
+                            encodingOpcodeTable[gcnEncoding].bits;
+            }
             
             /* decode instruction and put to output */
-            const GCNEncodingSpace& encSpace = 
-                (isGCN124) ? gcnInstrTableByCodeSpaces[GCNENC_MAXVAL+3 + gcnEncoding] :
-                  gcnInstrTableByCodeSpaces[gcnEncoding];
+            const GCNEncodingSpace& encSpace =
+                (isGCN15) ? gcnInstrTableByCodeSpaces[GCN_GFX10_ENCSPACE_IDX + gcnEncoding] :
+                ((isGCN124) ? gcnInstrTableByCodeSpaces[GCNENC_MAXVAL+3 + gcnEncoding] :
+                  gcnInstrTableByCodeSpaces[gcnEncoding]);
             const GCNInstruction* gcnInsn = gcnInstrTableByCode.get() +
                     encSpace.offset + opcode;
             
@@ -768,6 +984,17 @@ void GCNDisassembler::disassemble()
                         (curArchMask & gcnInsn->archMask) == 0)
                     isIllegal = true; // illegal
             }
+            else if (isGCN15 && gcnEncoding == GCNENC_FLAT && ((insnCode>>14)&3)!=0)
+            {
+                // GLOBAL_/SCRATCH_* instructions
+                const GCNEncodingSpace& encSpace4 =
+                    gcnInstrTableByCodeSpaces[GCN_GFX10_ENCSPACE_IDX + GCNENC_VOP3P +
+                        ((insnCode>>14)&3)];
+                gcnInsn = gcnInstrTableByCode.get() + encSpace4.offset + opcode;
+                if (gcnInsn->mnemonic == nullptr ||
+                        (curArchMask & gcnInsn->archMask) == 0)
+                    isIllegal = true; // illegal
+            }
             else if (gcnInsn->mnemonic == nullptr ||
                 (curArchMask & gcnInsn->archMask) == 0)
                 isIllegal = true;
@@ -801,8 +1028,8 @@ void GCNDisassembler::disassemble()
             // determine float literal type to display
             const FloatLitType displayFloatLits = 
                     ((disassembler.getFlags()&DISASM_FLOATLITS) != 0) ?
-                    (((gcnInsn->mode & GCN_MASK2) == GCN_FLOATLIT) ? FLTLIT_F32 : 
-                    ((gcnInsn->mode & GCN_MASK2) == GCN_F16LIT) ? FLTLIT_F16 :
+                    (((gcnInsn->mode & GCN_LITMASK) == GCN_FLOATLIT) ? FLTLIT_F32 :
+                    ((gcnInsn->mode & GCN_LITMASK) == GCN_F16LIT) ? FLTLIT_F16 :
                      FLTLIT_NONE) : FLTLIT_NONE;
             
             // print instruction in correct encoding
@@ -829,16 +1056,17 @@ void GCNDisassembler::disassemble()
                                spacesToAdd, curArchMask, *gcnInsn, insnCode, insnCode2);
                     break;
                 case GCNENC_SMRD:
-                    if (isGCN124)
+                    if (isGCN124 || isGCN15)
                         GCNDisasmUtils::decodeSMEMEncoding(*this, spacesToAdd, curArchMask,
                                   *gcnInsn, insnCode, insnCode2);
                     else
-                        GCNDisasmUtils::decodeSMRDEncoding(*this, spacesToAdd, curArchMask,
-                                  *gcnInsn, insnCode);
+                        GCNDisasmUtils::decodeSMRDEncoding(*this, pos, curReloc,
+                                spacesToAdd, curArchMask, *gcnInsn, insnCode, insnCode2);
                     break;
                 case GCNENC_VOPC:
                     GCNDisasmUtils::decodeVOPCEncoding(*this, pos, curReloc, spacesToAdd,
-                           curArchMask, *gcnInsn, insnCode, insnCode2, displayFloatLits);
+                           curArchMask, *gcnInsn, insnCode, insnCode2, displayFloatLits,
+                           disassembler.getFlags());
                     break;
                 case GCNENC_VOP1:
                     GCNDisasmUtils::decodeVOP1Encoding(*this, pos, curReloc, spacesToAdd,
@@ -846,12 +1074,23 @@ void GCNDisassembler::disassemble()
                     break;
                 case GCNENC_VOP2:
                     GCNDisasmUtils::decodeVOP2Encoding(*this, pos, curReloc, spacesToAdd,
-                           curArchMask, *gcnInsn, insnCode, insnCode2, displayFloatLits);
+                           curArchMask, *gcnInsn, insnCode, insnCode2, displayFloatLits,
+                           disassembler.getFlags());
                     break;
                 case GCNENC_VOP3A:
-                    GCNDisasmUtils::decodeVOP3Encoding(*this, spacesToAdd, curArchMask,
-                                 *gcnInsn, insnCode, insnCode2, displayFloatLits);
+                    GCNDisasmUtils::decodeVOP3Encoding(*this, pos, curReloc,
+                            spacesToAdd, curArchMask, *gcnInsn, insnCode, insnCode2,
+                            insnCode3, displayFloatLits, disassembler.getFlags());
                     break;
+                case GCNENC_VOP3P: {
+                    GCNInstruction newInsn = *gcnInsn;
+                    newInsn.encoding = GCNENC_VOP3A;
+                    newInsn.mode |= GCN_VOP3_VOP3P;
+                    GCNDisasmUtils::decodeVOP3Encoding(*this, pos, curReloc,
+                            spacesToAdd, curArchMask, newInsn, insnCode, insnCode2,
+                            insnCode3, displayFloatLits, disassembler.getFlags());
+                    break;
+                }
                 case GCNENC_VINTRP:
                     GCNDisasmUtils::decodeVINTRPEncoding(*this, spacesToAdd, curArchMask,
                                  *gcnInsn, insnCode);
@@ -869,8 +1108,13 @@ void GCNDisassembler::disassemble()
                                  *gcnInsn, insnCode, insnCode2);
                     break;
                 case GCNENC_MIMG:
-                    GCNDisasmUtils::decodeMIMGEncoding(*this, spacesToAdd, curArchMask,
-                                 *gcnInsn, insnCode, insnCode2);
+                    if (!isGCN15)
+                        GCNDisasmUtils::decodeMIMGEncoding(*this, spacesToAdd, curArchMask,
+                                    *gcnInsn, insnCode, insnCode2);
+                    else
+                        GCNDisasmUtils::decodeMIMGEncodingGFX10(*this, spacesToAdd,
+                                    curArchMask, *gcnInsn, insnCode, insnCode2, insnCode3,
+                                    insnCode4, insnCode5);
                     break;
                 case GCNENC_EXP:
                     GCNDisasmUtils::decodeEXPEncoding(*this, spacesToAdd, curArchMask,

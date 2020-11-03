@@ -81,6 +81,9 @@ enum ROCmConfigValueTarget
     ROCMCVAL_WAVEFRONT_SIZE,
     ROCMCVAL_CALL_CONVENTION,
     ROCMCVAL_RUNTIME_LOADER_KERNEL_SYMBOL,
+    ROCMCVAL_PGMRSRC3,
+    ROCMCVAL_USE_WAVE32,
+    ROCMCVAL_SHARED_VGPRSNUM,
     
     // metadata info
     ROCMCVAL_METADATA_START,
@@ -157,6 +160,9 @@ struct CLRX_INTERNAL AsmROCmPseudoOps: AsmPseudoOps
                       const char* linePtr);
     // .newbinfmt
     static void setNewBinFormat(AsmROCmHandler& handler, const char* linePtr);
+    
+    static void setLLVM10BinFormat(AsmROCmHandler& handler, const char* linePtr);
+    static void setMetadataV3Format(AsmROCmHandler& handler, const char* linePtr);
     
     // checkConfigValue, setConfigValueMain routines used by other handlers
     // to check and set AMD HSA config value

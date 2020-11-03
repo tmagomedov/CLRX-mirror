@@ -50,7 +50,7 @@ enum : Flags {
 };
 
 /// ROCm region/symbol type
-enum ROCmRegionType: uint8_t
+enum class ROCmRegionType: uint8_t
 {
     DATA,   ///< data object
     FKERNEL,   ///< function kernel (code)
@@ -83,7 +83,8 @@ enum class ROCmValueKind : cxbyte
     HIDDEN_PRINTF_BUFFER,   ///< buffer for printf calls
     HIDDEN_DEFAULT_QUEUE,   ///< OpenCL default queue
     HIDDEN_COMPLETION_ACTION,    ///< ???
-    MAX_VALUE = HIDDEN_COMPLETION_ACTION
+    HIDDEN_MULTIGRID_SYNC_ARG, /// ???
+    MAX_VALUE = HIDDEN_MULTIGRID_SYNC_ARG
 };
 
 /// ROCm argument's value type
@@ -133,7 +134,10 @@ struct ROCmKernelArgInfo
     CString name;       ///< name
     CString typeName;   ///< type name
     uint64_t size;      ///< argument size in bytes
-    uint64_t align;     ///< argument alignment in bytes
+    union {
+        uint64_t align;     ///< argument alignment in bytes
+        uint64_t offset;
+    };
     uint64_t pointeeAlign;      ///< alignemnt of pointed data of pointer
     ROCmValueKind valueKind;    ///< value kind
     ROCmValueType valueType;    ///< value type
@@ -169,6 +173,7 @@ struct ROCmKernelMetadata
     cxuint fixedWorkGroupSize[3];
     cxuint spilledSgprs;    ///< number of spilled SGPRs
     cxuint spilledVgprs;    ///< number of spilled VGPRs
+    CString deviceEnqueueSymbol;
     
     void initialize();
 };
@@ -192,6 +197,34 @@ struct ROCmMetadata
     void initialize();
     /// parse metadata info from metadata string
     void parse(size_t metadataSize, const char* metadata);
+    /// parse metadata info from MsgPack
+    void parseMsgPack(size_t metadataSize, const cxbyte* metadata);
+};
+
+struct ROCmKernelDescriptor
+{
+    uint32_t groupSegmentFixedSize;
+    uint32_t privateSegmentFixedSize;
+    uint64_t reserved0;
+    uint64_t kernelCodeEntryOffset;
+    uint64_t reserved1;
+    cxbyte reserved2[12];
+    uint32_t pgmRsrc3;
+    uint32_t pgmRsrc1;
+    uint32_t pgmRsrc2;
+    uint16_t initialKernelExecState;
+    cxbyte reserved3[6];
+    
+    void toLE()
+    {
+        SLEV(groupSegmentFixedSize, groupSegmentFixedSize);
+        SLEV(privateSegmentFixedSize, privateSegmentFixedSize);
+        SLEV(kernelCodeEntryOffset, kernelCodeEntryOffset);
+        SLEV(pgmRsrc3, pgmRsrc3);
+        SLEV(pgmRsrc1, pgmRsrc1);
+        SLEV(pgmRsrc2, pgmRsrc2);
+        SLEV(initialKernelExecState, initialKernelExecState);
+    }
 };
 
 /// ROCm main binary for GPU for 64-bit mode
@@ -216,8 +249,11 @@ private:
     char* metadata;
     std::unique_ptr<ROCmMetadata> metadataInfo;
     RegionMap kernelInfosMap;
+    Array<const ROCmKernelDescriptor*> kernelDescs;
     Array<size_t> gotSymbols;
     bool newBinFormat;
+    bool llvm10BinFormat;
+    bool metadataV3Format;
 public:
     /// constructor
     ROCmBinary(size_t binaryCodeSize, cxbyte* binaryCode,
@@ -290,6 +326,12 @@ public:
     /// get kernel metadata info by name
     const ROCmKernelMetadata& getKernelInfo(const char* name) const;
     
+    /// get kernel descriptor
+    const ROCmKernelDescriptor* getKernelDescriptor(size_t index) const
+    { return kernelDescs[index]; }
+    // get kernel descriptor by name
+    const ROCmKernelDescriptor* getKernelDescriptor(const char* name) const;
+    
     /// get target
     const CString& getTarget() const
     { return target; }
@@ -297,6 +339,14 @@ public:
     /// return true is new binary format
     bool isNewBinaryFormat() const
     { return newBinFormat; }
+    
+    /// return true is LLVM10 binary format
+    bool isLLVM10BinaryFormat() const
+    { return llvm10BinFormat; }
+    
+    /// return true is metadata V3 code object format
+    bool isMetadataV3Format() const
+    { return metadataV3Format; }
     
     /// get GOT symbol index (from elfbin dynsymbols)
     size_t getGotSymbolsNum() const
@@ -330,6 +380,7 @@ enum {
     ROCMFLAG_USE_GRID_WORKGROUP_COUNT_X = AMDHSAFLAG_USE_GRID_WORKGROUP_COUNT_X,
     ROCMFLAG_USE_GRID_WORKGROUP_COUNT_Y = AMDHSAFLAG_USE_GRID_WORKGROUP_COUNT_Y,
     ROCMFLAG_USE_GRID_WORKGROUP_COUNT_Z = AMDHSAFLAG_USE_GRID_WORKGROUP_COUNT_Z,
+    ROCMFLAG_USE_WAVE32 = AMDHSAFLAG_USE_WAVE32,
     
     ROCMFLAG_USE_ORDERED_APPEND_GDS = AMDHSAFLAG_USE_ORDERED_APPEND_GDS,
     ROCMFLAG_PRIVATE_ELEM_SIZE_BIT = AMDHSAFLAG_PRIVATE_ELEM_SIZE_BIT,
@@ -376,6 +427,8 @@ struct ROCmInput
     uint32_t archStepping;      ///< GPU arch stepping
     uint32_t eflags;    ///< ELF headef e_flags field
     bool newBinFormat;       ///< use new binary format for ROCm
+    bool llvm10BinFormat;
+    bool metadataV3Format;
     size_t globalDataSize;  ///< global data size
     const cxbyte* globalData;   ///< global data
     std::vector<ROCmSymbolInput> symbols;   ///< symbols
@@ -417,12 +470,15 @@ private:
     std::string target;
     std::unique_ptr<cxbyte[]> noteBuf;
     std::string metadataStr;
+    std::vector<cxbyte> metadataBytes;
     size_t metadataSize;
     const char* metadata;
     cxuint mainSectionsNum;
     uint16_t mainBuiltinSectTable[ROCMSECTID_MAX-ELFSECTID_START+1];
     void* rocmGotGen;
     void* rocmRelaDynGen;
+    void* rocmLLVMGDataGen;
+    Array<CString> kdescSymNames;
     
     void generateInternal(std::ostream* osPtr, std::vector<char>* vPtr,
              Array<cxbyte>* aPtr);
@@ -478,6 +534,120 @@ public:
     
     /// generates binary to vector of char
     void generate(std::vector<char>& vector);
+};
+
+void generateROCmMetadata(const ROCmMetadata& mdInfo,
+                    const ROCmKernelConfig** kconfigs, std::string& output);
+
+void generateROCmMetadataMsgPack(const ROCmMetadata& mdInfo,
+                    const ROCmKernelDescriptor** kdescs, std::vector<cxbyte>& output);
+
+void parseROCmMetadata(size_t metadataSize, const char* metadata,
+                ROCmMetadata& metadataInfo);
+
+void parseROCmMetadataMsgPack(size_t metadataSize, const cxbyte* metadata,
+                ROCmMetadata& metadataInfo);
+
+class MsgPackMapParser;
+
+class MsgPackArrayParser
+{
+private:
+    const cxbyte*& dataPtr;
+    const cxbyte* dataEnd;
+    size_t count;
+    void handleErrors();
+public:
+    MsgPackArrayParser(const cxbyte*& _dataPtr, const cxbyte* _dataEnd);
+    
+    void parseNil();
+    bool parseBool();
+    uint64_t parseInteger(cxbyte signess);
+    double parseFloat();
+    std::string parseString();
+    Array<cxbyte> parseData();
+    MsgPackArrayParser parseArray();
+    MsgPackMapParser parseMap();
+    size_t end(); // return left elements
+    
+    bool haveElements() const
+    { return count!=0; }
+};
+
+enum: cxbyte {
+    MSGPACK_WS_UNSIGNED = 0,  // only unsigned
+    MSGPACK_WS_SIGNED = 1,  // only signed
+    MSGPACK_WS_BOTH = 2  // both signed and unsigned range checking
+};
+
+class MsgPackMapParser
+{
+private:
+    const cxbyte*& dataPtr;
+    const cxbyte* dataEnd;
+    size_t count;
+    bool keyLeft;
+    void handleErrors(bool key);
+public:
+    MsgPackMapParser(const cxbyte*& _dataPtr, const cxbyte* _dataEnd);
+    
+    void parseKeyNil();
+    bool parseKeyBool();
+    uint64_t parseKeyInteger(cxbyte signess);
+    double parseKeyFloat();
+    std::string parseKeyString();
+    Array<cxbyte> parseKeyData();
+    MsgPackArrayParser parseKeyArray();
+    MsgPackMapParser parseKeyMap();
+    void parseValueNil();
+    bool parseValueBool();
+    uint64_t parseValueInteger(cxbyte signess);
+    double parseValueFloat();
+    std::string parseValueString();
+    Array<cxbyte> parseValueData();
+    MsgPackArrayParser parseValueArray();
+    MsgPackMapParser parseValueMap();
+    void skipValue();
+    size_t end(); // return left elements
+    
+    bool haveElements() const
+    { return count!=0; }
+};
+
+class MsgPackMapWriter;
+
+class MsgPackArrayWriter
+{
+private:
+    std::vector<cxbyte>& output;
+    size_t elemsNum;
+    size_t count;
+public:
+    MsgPackArrayWriter(size_t elemsNum, std::vector<cxbyte>& output);
+    
+    void putBool(bool b);
+    void putString(const char* str);
+    void putUInt(uint64_t v);
+    MsgPackArrayWriter putArray(size_t aelemsNum);
+    MsgPackMapWriter putMap(size_t melemsNum);
+};
+
+class MsgPackMapWriter
+{
+private:
+    std::vector<cxbyte>& output;
+    size_t elemsNum;
+    size_t count;
+    bool inKey;
+public:
+    MsgPackMapWriter(size_t elemsNum, std::vector<cxbyte>& output);
+    void putKeyString(const char* str);
+    void putValueBool(bool b);
+    void putValueString(const char* str);
+    void putValueUInt(uint64_t v);
+    MsgPackArrayWriter putValueArray(size_t aelemsNum);
+    MsgPackMapWriter putValueMap(size_t melemsNum);
+    std::vector<cxbyte>& putValueElement();
 };
 
 };

@@ -52,11 +52,12 @@ enum : cxbyte
     GCNENC_MIMG,    /* 0x3c<<26,  opcode = (7bit)<<18 */
     GCNENC_EXP,     /* 0x3e<<26,  opcode = none */
     GCNENC_FLAT,    /* 0x37<<26,  opcode = (8bit)<<18 (???8bit) */
+    GCNENC_VOP3P,
     GCNENC_MAXVAL = GCNENC_FLAT
 };
 
 
-typedef uint16_t GCNInsnMode;
+typedef uint32_t GCNInsnMode;
 
 // modes for GCN instructions
 enum : GCNInsnMode
@@ -101,6 +102,7 @@ enum : GCNInsnMode
     GCN_VOP_ARG_NONE = 0xd0,    /// no argument for VOP encodings
     GCN_NEW_OPCODE = 0xe0,  /// unique opcode that doesn't exists in VINTRP
     GCN_P0_P10_P20 = 0xf0,  /// second operand is param (P0,P10,P20)
+    GCN_VOPC_NOVCC = 0x80,  /// no VCC in VOPC instruction
     GCN_VOP3_VOP2 = 0x100,  /// VOP2 encoded as VOP3
     GCN_VOP3_VOP1 = 0x200,  /// VOP1 encoded as VOP3
     GCN_VOP3_VINTRP = 0x300,    /// VINTRP encoded as VOP3
@@ -115,6 +117,14 @@ enum : GCNInsnMode
     GCN_VINTRP_SRC2 = 0x1000,   /// VOP3/VINTRP with source2 (third source)
     GCN_VOP3_MASK3 = 0x3000,    /// mask for VINTRP in VOP2 encodings
     GCN_VOP3_VOP3P = 0x8000,    /// VOP3P encoding
+    GCN_VOP3_NODST = 0x1000000,  /// VOP3 - no DST
+    GCN_VOP_NODPP = 0x10000,    /// VOP instruction can not have DPP
+    GCN_VOP_NOSDWA = 0x20000,    /// VOP instruction can not have SDWA
+    GCN_VOP_NODPPSDWA = 0x30000,    /// VOP instruction can not have DPP and SDWA
+    GCN_VOP_NOSDWAVEGA = 0x40000,    /// VOP instruction can not have SDWA for VEGA
+    GCN_VCC_IMPL_READ = 0x80000,    /// VOP instruction with implicit VCC read
+    GCN_VCC_IMPL_WRITE = 0x100000,   /// VOP instruction with implicit VCC write
+    GCN_VOP_NOWVSZ = 0x200000,      // VOP SDST/VCC size doesn't not depend on wavesize
     // DS encoding modes
     GCN_ADDR_STD = 0x0,    /// standard place of address
     GCN_ADDR_DST = 0x10,    /// address operand in destination place
@@ -140,8 +150,9 @@ enum : GCNInsnMode
     GCN_ONLY_SRC = 0x8000,
     // others
     GCN_SBASE4 = 0x10,  /// SBASE requires 4 registers
-    GCN_FLOATLIT = 0x100,   /// float literal
-    GCN_F16LIT = 0x200, /// half literal
+    GCN_FLOATLIT = 0x40000000U,   /// float literal
+    GCN_F16LIT = 0x80000000U, /// half literal
+    GCN_LITMASK = 0xc0000000U,
     GCN_SMRD_ONLYDST = 0x30,    // only destination (no other operands)
     GCN_SMEM_SDATA_IMM = 0x40,  // treat SDATA as immediate
     GCN_SMEM_NOSDATA = 0x80,  // no destination
@@ -179,6 +190,32 @@ enum : GCNInsnMode
     GCN_MIMG_VAGE4D = 0x13,  /// vaddr requires 4 or more registers and holds user derivs
     GCN_MIMG_VAGE5D = 0x14,  /// vaddr requires 5 or more registers and holds user derivs
     GCN_MIMG_VAGE6D = 0x15,  /// vaddr requires 6 or more registers and holds user derivs
+    GCN_MIMG_VA_O = 0x20,  // vaddr *O*
+    GCN_MIMG_VA_B = 0x40,  // vaddr *B*
+    GCN_MIMG_VA_C = 0x80,  // vaddr *C*
+    GCN_MIMG_VA_L = 0x400,  // vaddr *L*
+    GCN_MIMG_VA_CL = 0x800,  // vaddr *CL*
+    GCN_MIMG_VA_B_O = GCN_MIMG_VA_B|GCN_MIMG_VA_O, // vaddr *B* and *O*
+    GCN_MIMG_VA_B_CL = GCN_MIMG_VA_B|GCN_MIMG_VA_CL, // vaddr *B* and *CL*
+     // vaddr *B* and *CL* and *O*
+    GCN_MIMG_VA_B_CL_O = GCN_MIMG_VA_B|GCN_MIMG_VA_CL|GCN_MIMG_VA_O,
+    GCN_MIMG_VA_C_B = GCN_MIMG_VA_C|GCN_MIMG_VA_B,  // vaddr *C* and *B*
+    // vaddr *C* and *B* and *CL*
+    GCN_MIMG_VA_C_B_CL = GCN_MIMG_VA_C|GCN_MIMG_VA_B|GCN_MIMG_VA_CL,
+    GCN_MIMG_VA_L_O = GCN_MIMG_VA_L|GCN_MIMG_VA_O,  // vaddr *L* anc *O*
+    GCN_MIMG_VA_C_L = GCN_MIMG_VA_C|GCN_MIMG_VA_L,  // vaddr *C* and *L*
+    GCN_MIMG_VA_C_CL = GCN_MIMG_VA_C|GCN_MIMG_VA_CL,  // vaddr *C* and *CLL*
+    GCN_MIMG_VA_C_O = GCN_MIMG_VA_C|GCN_MIMG_VA_O,  // vaddr *C* and *O*
+    GCN_MIMG_VA_CL_O = GCN_MIMG_VA_CL|GCN_MIMG_VA_O,  // vaddr *CL* and *O*
+    // vaddr *C* and *CL* and *O*
+    GCN_MIMG_VA_C_CL_O = GCN_MIMG_VA_C|GCN_MIMG_VA_CL|GCN_MIMG_VA_O,
+    // vaddr *C* and *CL* and *B* and *O*
+    GCN_MIMG_VA_C_B_CL_O = GCN_MIMG_VA_C|GCN_MIMG_VA_CL|GCN_MIMG_VA_B|GCN_MIMG_VA_O,
+    // vaddr *C* and *L* and *O*
+    GCN_MIMG_VA_C_L_O = GCN_MIMG_VA_C|GCN_MIMG_VA_L|GCN_MIMG_VA_O,
+    // vaddr *C* and *B* and *O*
+    GCN_MIMG_VA_C_B_O = GCN_MIMG_VA_C|GCN_MIMG_VA_B|GCN_MIMG_VA_O,
+    GCN_MIMG_VA_MIP = 0x10000,  // vaddr _MIP
     GCN_MIMG_VA_MASK = 0xf,
     GCN_MLOAD = 0x1000, // instruction load data to vgprs
     GCN_MATOMIC = 0x2000, // instruction perform atomics and returns data if glc==1

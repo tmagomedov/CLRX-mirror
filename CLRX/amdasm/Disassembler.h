@@ -71,9 +71,10 @@ enum: Flags
     DISASM_CODEPOS = 0x200,   ///< print code position
     DISASM_HSACONFIG = 0x400,  ///< print HSA configuration
     DISASM_HSALAYOUT = 0x800,  ///< print in HSA layout (like Gallium or ROCm)
+    DISASM_WAVE32 = 0x1000, ///< use WAVESIZE32
     
     ///< all disassembler flags (without config)
-    DISASM_ALL = FLAGS_ALL&(~(DISASM_CONFIG|DISASM_BUGGYFPLIT|
+    DISASM_ALL = FLAGS_ALL&(~(DISASM_CONFIG|DISASM_BUGGYFPLIT|DISASM_WAVE32|
                     DISASM_HSACONFIG|DISASM_HSALAYOUT))
 };
 
@@ -187,6 +188,11 @@ public:
     /// flush output
     void flushOutput()
     { return output.flush(); }
+    
+    /// get disassemblers flags
+    Flags getFlags() const;
+    /// set disassemblers flags
+    void setFlags(Flags flags);
 };
 
 /// GCN architectur dissassembler
@@ -296,15 +302,6 @@ struct AmdCL2DisasmInput
     std::vector<AmdCL2DisasmKernelInput> kernels;    ///< kernel inputs
 };
 
-/// disasm ROCm kernel input
-struct ROCmDisasmKernelInput
-{
-    CString kernelName; ///< kernel name
-    const cxbyte* setup;    ///< setup
-    size_t codeSize;    ///< code size
-    size_t offset;      ///< kernel offset
-};
-
 /// disasm ROCm region
 struct ROCmDisasmRegionInput
 {
@@ -312,6 +309,12 @@ struct ROCmDisasmRegionInput
     size_t size;    ///< region size
     size_t offset;  ///< region offset in code
     ROCmRegionType type;  ///< type
+};
+
+struct ROCmDisasmKernelDescInfo
+{
+    size_t sectionOffset;
+    const ROCmKernelDescriptor* desc;
 };
 
 /// disasm ROCm input
@@ -322,6 +325,8 @@ struct ROCmDisasmInput
     uint32_t archStepping;     ///< GPU arch stepping
     uint32_t eflags;   ///< ELF header e_flags field
     bool newBinFormat;  ///< new binary format
+    bool llvm10BinFormat;  ///< new LLVM10 binary format
+    bool metadataV3;    ///< new metadata v3 format
     std::vector<ROCmDisasmRegionInput> regions;  ///< regions
     size_t codeSize;    ///< code size
     const cxbyte* code; ///< code
@@ -331,6 +336,7 @@ struct ROCmDisasmInput
     size_t metadataSize;    ///< metadata size
     const char* metadata;   ///< metadata
     Array<std::pair<CString, size_t> > gotSymbols; ///< GOT symbols names
+    std::vector<ROCmDisasmKernelDescInfo> kernelDescs; ///< kernel descriptors
 };
 
 /// disasm kernel info structure (Gallium binaries)
@@ -426,6 +432,14 @@ public:
      * \param flags flags for disassembler
      */
     Disassembler(const ROCmBinary& binary, std::ostream& output, Flags flags = 0);
+    /// constructor for ROCm GPU binary 2
+    /**
+     * \param binary main GPU binary
+     * \param output output stream
+     * \param flags flags for disassembler
+     */
+    Disassembler(const ROCmBinary& binary, std::ostream& output, bool hasGPUDeviceType,
+                 GPUDeviceType deviceType, Flags flags = 0);
     /// constructor for AMD disassembler input
     /**
      * \param disasmInput disassembler input object
@@ -483,7 +497,7 @@ public:
     /// get disassemblers flags
     Flags getFlags() const
     { return flags; }
-    /// get disassemblers flags
+    /// set disassemblers flags
     void setFlags(Flags flags)
     { this->flags = flags; }
     
@@ -502,6 +516,10 @@ public:
     const GalliumDisasmInput* getGalliumInput() const
     { return galliumInput; }
     
+    /// get disassembler input
+    const ROCmDisasmInput* getROCmInput() const
+    { return rocmInput; }
+    
     /// get output stream
     const std::ostream& getOutput() const
     { return output; }
@@ -509,6 +527,13 @@ public:
     std::ostream& getOutput()
     { return output; }
 };
+
+/// get disassemblers flags
+inline Flags ISADisassembler::getFlags() const
+{ return disassembler.getFlags(); }
+/// set disassemblers flags
+inline void ISADisassembler::setFlags(Flags flags)
+{ disassembler.setFlags(flags); }
 
 // routines to get binary config inputs
 

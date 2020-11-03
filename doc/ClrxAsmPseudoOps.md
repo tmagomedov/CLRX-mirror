@@ -94,14 +94,20 @@ Choose AMD Catalyst OpenCL 1.2 program binary format.
 This pseudo-operation should to be at begin of source.
 Choose AMD Catalyst new (introduced for OpenCL 2.0 support) program binary format.
 
+### .amd3
+
+This pseudo-operation should to be at begin of source.
+Choose ROCm LLV10 binary format with metadata V3 format -
+new AMD OpenCL format for Navi (GCN1.5).
+
 ### .arch
 
 Syntax: .arch ARCHITECTURE
 
 This pseudo-operation should to be at begin of source. Set GPU architecture.
 One of following architecture can be set:
-SI, VI, CI, VEGA, VEGA20, GFX6, GFX7, GFX8, GFX9, GFX906, GCN1.0, GCN1.1, GCN1.2,
-GCN1.4 and GCN1.4.1.
+SI, VI, CI, VEGA, VEGA20, Navi, NaviDL, GFX6, GFX7, GFX8, GFX9, GFX906, GFX10, GFX1011,
+GCN1.0, GCN1.1, GCN1.2, GCN1.4, GCN1.4.1, GCN1.5, GCN1.5.1.
 
 ### .ascii
 
@@ -388,6 +394,8 @@ Id | Description
  2 | GCN1.2 (Tonga, Fiji, Ellesmere)
  3 | VEGA (AMD RX VEGA)
  4 | VEGA20 (GFX906)
+ 5 | NAVI (RX 5700)
+ 6 | NAVI DL
 
 ### .get_format
 
@@ -441,6 +449,9 @@ Id  | Description
  27 | gfx905 (Radeon RX VEGA)
  28 | gfx906 (Radeon VEGA 20)
  29 | gfx907 (Radeon VEGA 20 ???)
+ 30 | gfx1000
+ 31 | gfx1010
+ 32 | gfx1011
 
 ### .get_policy
 
@@ -475,7 +486,7 @@ Baffin, Bonaire, CapeVerde, Carrizo, Dummy, Ellesmere, Fiji, GFX700, GFX701, GFX
 GFX802, GFX803, GFX804, GFX900, GFX901, GFX902, GFX903, GFX904, GFX905, GFX906, GFX907,
 Goose, Hainan, Hawaii, Horse, Iceland, Kalindi, Mullins, Oland, Pitcairn, Polaris10,
 Polaris11, Polaris12, Polaris20, Polaris21, Polaris22, Raven, Spectre, Spooky, Stoney,
-Tahiti, Tonga, Topaz, Vega10, Vega11, Vega12 and Vega20.
+Tahiti, Tonga, Topaz, Vega10, Vega11, Vega12, Vega20, GFX1000, GFX1010, GFX1011, Navi10.
 
 ### .half
 
@@ -776,6 +787,11 @@ Disable ignoring letter's case in macro names.
 
 Disable old modifier parametrization that accepts only 0 and 1 values (to 0.1.5 version).
 
+### .nowave32
+
+Disable wavefront size as 32 elements (apply only for GFX10 devices).
+Use default 64 element wavesize.
+
 ### .octa
 
 Syntax: .octa OCTA-LITERAL,...
@@ -983,6 +999,10 @@ Assembler start searching object begins from the last declared 'using' to first 
 Syntax: .warning "STRING"
 
 Print warning message specified in first argument.
+
+### .wave32
+
+Set wavefront size as 32 elements (apply only for GFX10 devices).
 
 ### .weak
 

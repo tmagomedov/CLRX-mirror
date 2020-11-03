@@ -147,6 +147,7 @@ public:
     {
         cxuint allocRegs[MAX_REGTYPES_NUM];
         Flags allocRegFlags;
+        Flags codeFlags;
     };
 protected:
     Assembler& assembler;   ///< assembler reference
@@ -213,6 +214,7 @@ public:
     
     /// prepare before section diference resolving
     virtual bool prepareSectionDiffsResolving();
+    virtual void setCodeFlags(Flags codeFlags);
 };
 
 /// format handler with Kcode (kernel-code) handling
@@ -239,6 +241,8 @@ public:
     virtual bool isCodeSection() const = 0;
     /// return KernelBase for kernel index
     virtual KernelBase& getKernelBase(AsmKernelId index) = 0;
+    /// return KernelBase for kernel index
+    virtual const KernelBase& getKernelBase(AsmKernelId index) const = 0;
     /// return kernel number
     virtual size_t getKernelsNum() const = 0;
 };
@@ -359,6 +363,8 @@ struct AsmAmdHsaKernelConfig: AmdHsaKernelConfig
     bool debugMode;     ///< debug mode
     bool privilegedMode;   ///< prvileged mode
     bool dx10Clamp;     ///< DX10 CLAMP mode
+    cxuint sharedVGPRsNum;
+    uint32_t pgmRsrc3;
     
     void initialize();
 };
@@ -462,6 +468,7 @@ public:
     // kcode support
     bool isCodeSection() const;
     KernelBase& getKernelBase(AsmKernelId index);
+    const KernelBase& getKernelBase(AsmKernelId index) const;
     size_t getKernelsNum() const;
     void handleLabel(const CString& label);
 };
@@ -547,6 +554,7 @@ public:
     // kcode support
     bool isCodeSection() const;
     KernelBase& getKernelBase(AsmKernelId index);
+    const KernelBase& getKernelBase(AsmKernelId index) const;
     size_t getKernelsNum() const;
 };
 
@@ -628,7 +636,9 @@ public:
     // kcode support
     bool isCodeSection() const;
     KernelBase& getKernelBase(AsmKernelId index);
+    const KernelBase& getKernelBase(AsmKernelId index) const;
     size_t getKernelsNum() const;
+    void setCodeFlags(Flags codeFlags);
 };
 
 };

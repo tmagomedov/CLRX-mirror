@@ -145,8 +145,9 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
     RegRange vdataReg(0, 0);
     GCNOperand soffsetOp{};
     RegRange srsrcReg(0, 0);
-    const bool isGCN12 = (arch & ARCH_GCN_1_2_4)!=0;
-    const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
+    const bool isGCN12 = (arch & ARCH_GCN_1_2_4_5)!=0;
+    const bool isGCN14 = (arch & ARCH_GCN_1_4_5)!=0;
+    const bool isGCN15 = ((arch&ARCH_GCN_1_5)!=0);
     GCNAssembler* gcnAsm = static_cast<GCNAssembler*>(asmr.isaAssembler);
     
     skipSpacesToEnd(linePtr, end);
@@ -206,8 +207,10 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
     bool haveOffset = false, haveFormat = false;
     cxuint dfmt = 1, nfmt = 0;
     cxuint offset = 0;
+    cxuint format = 0;
     std::unique_ptr<AsmExpression> offsetExpr;
-    bool haveAddr64 = false, haveTfe = false, haveSlc = false, haveLds = false;
+    bool haveAddr64 = false, haveTfe = false, haveSlc = false;
+    bool haveDlc = false, haveLds = false;
     bool haveGlc = false, haveOffen = false, haveIdxen = false;
     const char* modName = (gcnInsn.encoding==GCNENC_MTBUF) ?
             "MTBUF modifier" : "MUBUF modifier";
@@ -251,6 +254,9 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
         }
         else if (gcnInsn.encoding==GCNENC_MTBUF && ::strcmp(name, "format")==0)
         {
+            
+            if (!isGCN15)
+            { // pre NAVI
             // parse format
             bool modGood = true;
             skipSpacesToEnd(linePtr, end);
@@ -260,7 +266,6 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
                 continue;
             }
             skipCharAndSpacesToEnd(linePtr, end);
-            
             // parse [DATA_FORMAT:NUMBER_FORMAT]
             if (linePtr==end || *linePtr!='[')
                 ASM_NOTGOOD_BY_ERROR1(modGood = good, modPlace,
@@ -342,6 +347,20 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
                     haveFormat = true;
                 }
             }
+            // end for pre NAVI
+            }
+            else
+            {
+                // GFX10 and NAVI
+                if (parseModImm(asmr, linePtr, format, nullptr, "format", 7, WS_UNSIGNED))
+                {
+                    if (haveFormat)
+                        asmr.printWarning(modPlace, "Format is already defined");
+                    haveFormat = true;
+                }
+                else
+                    good = false;
+            }
         }
         // other modifiers
         else if (!isGCN12 && ::strcmp(name, "addr64")==0)
@@ -350,6 +369,8 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
             good &= parseModEnable(asmr, linePtr, haveTfe, "tfe modifier");
         else if (::strcmp(name, "glc")==0)
             good &= parseModEnable(asmr, linePtr, haveGlc, "glc modifier");
+        else if (isGCN15 && ::strcmp(name, "dlc")==0)
+            good &= parseModEnable(asmr, linePtr, haveDlc, "dlc modifier");
         else if (::strcmp(name, "slc")==0)
             good &= parseModEnable(asmr, linePtr, haveSlc, "slc modifier");
         else if (gcnInsn.encoding==GCNENC_MUBUF && ::strcmp(name, "lds")==0)
@@ -429,22 +450,29 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
         SLEV(words[0], 0xe0000000U | offset | (haveOffen ? 0x1000U : 0U) |
                 (haveIdxen ? 0x2000U : 0U) | (haveGlc ? 0x4000U : 0U) |
                 ((haveAddr64 && !isGCN12) ? 0x8000U : 0U) | (haveLds ? 0x10000U : 0U) |
-                ((haveSlc && isGCN12) ? 0x20000U : 0) | (uint32_t(gcnInsn.code1)<<18));
+                ((haveSlc && isGCN12 && !isGCN15) ? 0x20000U : 0) |
+                ((haveDlc && isGCN15) ? 0x8000U : 0) |
+                (uint32_t(gcnInsn.code1)<<18));
     else
     {
         // MTBUF encoding
-        uint32_t code = (isGCN12) ? (uint32_t(gcnInsn.code1)<<15) :
-                (uint32_t(gcnInsn.code1)<<16);
+        uint32_t code = (isGCN12 && !isGCN15) ? (uint32_t(gcnInsn.code1)<<15) :
+                (uint32_t(gcnInsn.code1&7)<<16);
+        uint32_t formatVal = isGCN15 ? (uint32_t(format)<<19) :
+                    ((uint32_t(dfmt)<<19) | (uint32_t(nfmt)<<23));
         SLEV(words[0], 0xe8000000U | offset | (haveOffen ? 0x1000U : 0U) |
                 (haveIdxen ? 0x2000U : 0U) | (haveGlc ? 0x4000U : 0U) |
                 ((haveAddr64 && !isGCN12) ? 0x8000U : 0U) | code |
-                (uint32_t(dfmt)<<19) | (uint32_t(nfmt)<<23));
+                ((haveDlc && isGCN15) ? 0x8000U : 0) | formatVal);
     }
     // second word
     SLEV(words[1], (vaddrReg.bstart()&0xff) | (uint32_t(vdataReg.bstart()&0xff)<<8) |
             (uint32_t(srsrcReg.bstart()>>2)<<16) |
-            ((haveSlc && (!isGCN12 || gcnInsn.encoding==GCNENC_MTBUF)) ? (1U<<22) : 0) |
-            (haveTfe ? (1U<<23) : 0) | (uint32_t(soffsetOp.range.bstart())<<24));
+            ((haveSlc && (!isGCN12 || isGCN15 ||
+                    gcnInsn.encoding==GCNENC_MTBUF)) ? (1U<<22) : 0) |
+            (haveTfe ? (1U<<23) : 0) | (uint32_t(soffsetOp.range.bstart())<<24) |
+            ((isGCN15 && gcnInsn.encoding==GCNENC_MTBUF &&
+                        (gcnInsn.code1&8)!=0) ? (1U<<21) : 0));
     
     output.insert(output.end(), reinterpret_cast<cxbyte*>(words),
             reinterpret_cast<cxbyte*>(words + 2));
@@ -458,6 +486,31 @@ bool GCNAsmUtils::parseMUBUFEncoding(Assembler& asmr, const GCNAsmInstruction& g
     return true;
 }
 
+struct GFX10MIMGDimInfoEntry
+{
+    cxuint dwordsNum;
+    cxuint derivsNum; // deriv dwords num
+};
+
+static const GFX10MIMGDimInfoEntry gfx10MImgDimInfoTbl[8] =
+{
+    { 1, 2 }, { 2, 4 }, { 3, 6 }, { 3, 4 }, { 2, 2 }, { 3, 4 }, { 3, 4 }, { 4, 4 }
+};
+
+
+// dim values names
+static const std::pair<const char*, cxuint> mimgDimNamesMap[] =
+{
+    { "1d", 0 },
+    { "1d_array",4 },
+    { "2d", 1 },
+    { "2d_array", 5 },
+    { "2d_msaa", 6 },
+    { "2d_msaa_array", 7 },
+    { "3d", 2 },
+    { "cube", 3 }
+};
+
 bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,
                   const char* instrPlace, const char* linePtr, GPUArchMask arch,
                   std::vector<cxbyte>& output, GCNAssembler::Regs& gcnRegs,
@@ -466,9 +519,12 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     const char* end = asmr.line+asmr.lineSize;
     if (gcnEncSize==GCNEncSize::BIT32)
         ASM_FAIL_BY_ERROR(instrPlace, "Only 64-bit size for MIMG encoding")
+    const bool isGCN12 = (arch & ARCH_GCN_1_2_4)!=0;
     const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
+    const bool isGCN15 = (arch & ARCH_GCN_1_5)!=0;
     bool good = true;
     RegRange vaddrReg(0, 0);
+    std::vector<RegRange> vaddrRegList;
     RegRange vdataReg(0, 0);
     RegRange ssampReg(0, 0);
     RegRange srsrcReg(0, 0);
@@ -486,18 +542,26 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     skipSpacesToEnd(linePtr, end);
     const char* vaddrPlace = linePtr;
     gcnAsm->setCurrentRVU(1);
-    // // parse VADDR (various VGPR number, verified later)
-    good &= parseVRegRange(asmr, linePtr, vaddrReg, 0, GCNFIELD_M_VADDR, true,
-                    INSTROP_SYMREGRANGE|INSTROP_READ);
-    cxuint geRegRequired = (gcnInsn.mode&GCN_MIMG_VA_MASK)+1;
-    cxuint vaddrRegsNum = vaddrReg.end-vaddrReg.start;
-    cxuint vaddrMaxExtraRegs = (gcnInsn.mode&GCN_MIMG_VADERIV) ? 7 : 3;
-    if (vaddrRegsNum < geRegRequired || vaddrRegsNum > geRegRequired+vaddrMaxExtraRegs)
+    if (!isGCN15 || linePtr==end || *linePtr!='[')
+        // parse VADDR (various VGPR number, verified later)
+        good &= parseVRegRange(asmr, linePtr, vaddrReg, 0, GCNFIELD_M_VADDR, true,
+                        INSTROP_SYMREGRANGE|INSTROP_READ);
+    else // for VADDR register list
+        good &= parseVRegRangesLimited(asmr, linePtr, 13, vaddrRegList,
+                   GCNFIELD_M_VADDR_MULTI, INSTROP_SYMREGRANGE|INSTROP_READ);
+    
+    if (!isGCN15)
     {
-        char buf[60];
-        snprintf(buf, 60, "Required (%u-%u) vector registers", geRegRequired,
-                 geRegRequired+vaddrMaxExtraRegs);
-        ASM_NOTGOOD_BY_ERROR(vaddrPlace, buf)
+        cxuint geRegRequired = (gcnInsn.mode&GCN_MIMG_VA_MASK)+1;
+        cxuint vaddrRegsNum = vaddrReg.end-vaddrReg.start;
+        cxuint vaddrMaxExtraRegs = (gcnInsn.mode&GCN_MIMG_VADERIV) ? 7 : 3;
+        if (vaddrRegsNum < geRegRequired || vaddrRegsNum > geRegRequired+vaddrMaxExtraRegs)
+        {
+            char buf[60];
+            snprintf(buf, 60, "Required (%u-%u) vector registers", geRegRequired,
+                    geRegRequired+vaddrMaxExtraRegs);
+            ASM_NOTGOOD_BY_ERROR(vaddrPlace, buf)
+        }
     }
     
     if (!skipRequiredComma(asmr, linePtr))
@@ -522,6 +586,8 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     bool haveTfe = false, haveSlc = false, haveGlc = false;
     bool haveDa = false, haveR128 = false, haveLwe = false, haveUnorm = false;
     bool haveDMask = false, haveD16 = false, haveA16 = false;
+    bool haveDlc = false, haveDim = false;
+    cxbyte dimVal = 0;
     cxbyte dmask = 0x1;
     /* modifiers and modifiers */
     while(linePtr!=end)
@@ -543,8 +609,54 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
             if (name[1]=='a' && name[2]==0)
                 // DA modifier
                 good &= parseModEnable(asmr, linePtr, haveDa, "da modifier");
-            else if ((arch & ARCH_GCN_1_2_4)!=0 && name[1]=='1' &&
-                name[2]=='6' && name[3]==0)
+            else if (isGCN15 && name[1]=='l' && name[2]=='c' && name[3]==0)
+                good &= parseModEnable(asmr, linePtr, haveDlc, "dlc modifier");
+            else if (isGCN15 && name[1]=='i' && name[2]=='m' && name[3]==0)
+            {
+                // parse dim
+                // parse dmask
+                skipSpacesToEnd(linePtr, end);
+                if (linePtr!=end && *linePtr==':')
+                {
+                    skipCharAndSpacesToEnd(linePtr, end);
+                    const char* dimPlace = linePtr;
+                    char dimName[30];
+                    if (linePtr != end && *linePtr=='@')
+                    {
+                        // expression, parse DATA_FORMAT
+                        linePtr++;
+                        if (!parseImm(asmr, linePtr, dimVal, nullptr, 3, WS_UNSIGNED))
+                            good = false;
+                        if (good)
+                        {
+                            if (haveDim)
+                                asmr.printWarning(modPlace, "Dim is already defined");
+                            haveDim = true;
+                        }
+                    }
+                    else if (getMUBUFFmtNameArg(
+                                asmr, 30, dimName, linePtr, "MIMG dimension"))
+                    {
+                        toLowerString(dimName);
+                        size_t nfmtNameIndex = (::strncmp(dimName,
+                                 "sq_rsrc_img_", 12)==0) ? 12 : 0;
+                        size_t dimIdx = binaryMapFind(mimgDimNamesMap,
+                               mimgDimNamesMap+8, dimName+nfmtNameIndex,
+                               CStringLess())-mimgDimNamesMap;
+                        // check if found
+                        if (dimIdx!=8)
+                        {
+                            dimVal = mimgDimNamesMap[dimIdx].second;
+                            if (haveDim)
+                                asmr.printWarning(modPlace, "Dim is already defined");
+                            haveDim = true;
+                        }
+                        else
+                            ASM_NOTGOOD_BY_ERROR1(good, dimPlace, "Unknown MIMG dimension")
+                    }
+                }
+            }
+            else if ((isGCN12 || isGCN15) && name[1]=='1' && name[2]=='6' && name[3]==0)
                 // D16 modifier
                 good &= parseModEnable(asmr, linePtr, haveD16, "d16 modifier");
             else if (::strcmp(name+1, "mask")==0)
@@ -564,7 +676,7 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
                             asmr.printWarning(modPlace, "Dmask is already defined");
                         haveDMask = true;
                         if (value>0xf)
-                            asmr.printWarning(valuePlace, "Dmask out of range (0-15)");
+                            asmr.printWarning(valuePlace, "Dmask out of range (1-15)");
                         dmask = value&0xf;
                         if (dmask == 0)
                             ASM_NOTGOOD_BY_ERROR(valuePlace, "Zero in dmask is illegal")
@@ -606,8 +718,13 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     cxuint dregsNum = 4;
     // check number of registers in VDATA
     if ((gcnInsn.mode & GCN_MIMG_VDATA4) == 0)
+    {
         dregsNum = ((dmask & 1)?1:0) + ((dmask & 2)?1:0) + ((dmask & 4)?1:0) +
-                ((dmask & 8)?1:0) + (haveTfe);
+                ((dmask & 8)?1:0);
+        if ((isGCN14 || isGCN15) && haveD16)
+            dregsNum = (dregsNum+1)>>1;
+        dregsNum += (haveTfe);
+    }
     if (dregsNum!=0 && !isXRegRange(vdataReg, dregsNum))
     {
         char errorMsg[40];
@@ -619,6 +736,38 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     if (!isXRegRange(srsrcReg, (haveR128)?4:8))
         ASM_NOTGOOD_BY_ERROR(srsrcPlace, (haveR128) ? "Required 4 scalar registers" :
                     "Required 8 scalar registers")
+    
+    cxuint totalVaddrRegs = 0;
+    if (isGCN15)
+    {
+        if (!haveDim)
+            ASM_FAIL_BY_ERROR(instrPlace,
+                              "MIMG instruction for GFX10 requires DIM modifier")
+        
+        // check number of VADDR registers
+        cxuint daddrsNum = gfx10MImgDimInfoTbl[dimVal].dwordsNum;
+        if ((gcnInsn.mode & GCN_MIMG_VADERIV)!=0)
+            daddrsNum += gfx10MImgDimInfoTbl[dimVal].derivsNum;
+        daddrsNum += ((gcnInsn.mode & GCN_MIMG_VA_MIP)!=0) +
+                    ((gcnInsn.mode & GCN_MIMG_VA_C)!=0) +
+                    ((gcnInsn.mode & GCN_MIMG_VA_CL)!=0) +
+                    ((gcnInsn.mode & GCN_MIMG_VA_L)!=0) +
+                    ((gcnInsn.mode & GCN_MIMG_VA_B)!=0) +
+                    ((gcnInsn.mode & GCN_MIMG_VA_O)!=0);
+        totalVaddrRegs = vaddrReg ? vaddrReg.end-vaddrReg.start : 0;
+        if (!vaddrReg)
+            for (const RegRange& rpair: vaddrRegList)
+                totalVaddrRegs += rpair.end - rpair.start;
+        
+        if (totalVaddrRegs < daddrsNum)
+        {
+            char buf[60];
+            sprintf(buf, "MIMG VADDR requires least %u registers", daddrsNum);
+            ASM_FAIL_BY_ERROR(vaddrPlace, buf);
+        }
+        else if (totalVaddrRegs > 13)
+            ASM_FAIL_BY_ERROR(vaddrPlace, "MIMG VADDR accepts no more than 13 registers");
+    }
     
     if (!good || !checkGarbagesAtEnd(asmr, linePtr))
         return false;
@@ -642,16 +791,37 @@ bool GCNAsmUtils::parseMIMGEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     
     // put instruction words
     uint32_t words[2];
+    uint32_t extraDwordEnc = 0;
+    cxbyte vaddrRegCodes[13];
+    vaddrRegCodes[0] = vaddrReg.bstart()&0xff;
+    if (isGCN15 && !vaddrReg) // if vaddr reg list
+    {
+        extraDwordEnc = (((totalVaddrRegs-1+3)>>2)&3)<<1;
+        cxuint i = 0;
+        for (const RegRange& rpair: vaddrRegList)
+        {
+            for (cxuint r = rpair.start; r < rpair.end; r++)
+                vaddrRegCodes[i++] = rpair.isRegVar() ? 0 : (r&0xff);
+        }
+    }
+    
     SLEV(words[0], 0xf0000000U | (uint32_t(dmask&0xf)<<8) | (haveUnorm ? 0x1000U : 0) |
         (haveGlc ? 0x2000U : 0) | (haveDa ? 0x4000U : 0) |
-        (haveR128|haveA16 ? 0x8000U : 0) |
+        (haveDim ? uint32_t(dimVal)<<3 : 0) | extraDwordEnc |
+        (haveR128|haveA16 ? 0x8000U : 0) | (haveDlc ? 0x80U : 0) |
         (haveTfe ? 0x10000U : 0) | (haveLwe ? 0x20000U : 0) |
         (uint32_t(gcnInsn.code1)<<18) | (haveSlc ? (1U<<25) : 0));
-    SLEV(words[1], (vaddrReg.bstart()&0xff) | (uint32_t(vdataReg.bstart()&0xff)<<8) |
+    SLEV(words[1], vaddrRegCodes[0] | (uint32_t(vdataReg.bstart()&0xff)<<8) |
             (uint32_t(srsrcReg.bstart()>>2)<<16) | (uint32_t(ssampReg.bstart()>>2)<<21) |
             (haveD16 ? (1U<<31) : 0));
     output.insert(output.end(), reinterpret_cast<cxbyte*>(words),
             reinterpret_cast<cxbyte*>(words + 2));
+    if (isGCN15 && !vaddrReg)
+    {
+        output.insert(output.end(), vaddrRegCodes+1, vaddrRegCodes+totalVaddrRegs);
+        // alignment to dword
+        output.insert(output.end(), (4 - ((totalVaddrRegs-1)&3))&3, cxbyte(0));
+    }
     
     // update register pool (instr loads or save old value) */
     if (vdataReg && !vdataReg.isRegVar() && (vdataToWrite || haveTfe))
@@ -827,6 +997,7 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     if (gcnEncSize==GCNEncSize::BIT32)
         ASM_FAIL_BY_ERROR(instrPlace, "Only 64-bit size for FLAT encoding")
     const bool isGCN14 = (arch & ARCH_GCN_1_4)!=0;
+    const bool isGCN15 = ((arch&ARCH_GCN_1_5)!=0);
     const cxuint flatMode = (gcnInsn.mode & GCN_FLAT_MODEMASK);
     bool good = true;
     RegRange vaddrReg(0, 0);
@@ -838,20 +1009,33 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     skipSpacesToEnd(linePtr, end);
     const char* vdstPlace = nullptr;
     
+    bool vdstOff = false; // for shortened for for ATOMICS
     bool vaddrOff = false;
     const cxuint dregsNum = ((gcnInsn.mode&GCN_DSIZE_MASK)>>GCN_SHIFT2)+1;
     
     const cxuint addrRegsNum = (flatMode != GCN_FLAT_SCRATCH ?
                 (flatMode==GCN_FLAT_FLAT ? 2 : 0)  : 1);
     const char* addrPlace = nullptr;
+    
+    const bool atomic = (gcnInsn.mode & GCN_MATOMIC)!=0;
+    
     if ((gcnInsn.mode & GCN_FLAT_ADST) == 0)
     {
         // first is destination
         vdstPlace = linePtr;
-        
-        gcnAsm->setCurrentRVU(0);
-        good &= parseVRegRange(asmr, linePtr, vdstReg, 0, GCNFIELD_FLAT_VDST, true,
-                        INSTROP_SYMREGRANGE|INSTROP_WRITE);
+        if (atomic && flatMode == GCN_FLAT_SCRATCH && linePtr+3<=end &&
+            strncasecmp(linePtr, "off", 3)==0 && (linePtr+3==end || !isAlnum(linePtr[3])))
+        {
+            // // if 'off' word
+            vdstOff = true;
+            linePtr+=3;
+        }
+        else
+        {
+            gcnAsm->setCurrentRVU(0);
+            good &= parseVRegRange(asmr, linePtr, vdstReg, 0, GCNFIELD_FLAT_VDST, true,
+                            INSTROP_SYMREGRANGE|INSTROP_WRITE);
+        }
         if (!skipRequiredComma(asmr, linePtr))
             return false;
         skipSpacesToEnd(linePtr, end);
@@ -867,8 +1051,13 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
         {
             gcnAsm->setCurrentRVU(1);
             // parse VADDR (1 or 2 VGPR's)
-            good &= parseVRegRange(asmr, linePtr, vaddrReg, addrRegsNum,
-                    GCNFIELD_FLAT_ADDR, true, INSTROP_SYMREGRANGE|INSTROP_READ);
+            if (!atomic)
+                good &= parseVRegRange(asmr, linePtr, vaddrReg, addrRegsNum,
+                        GCNFIELD_FLAT_ADDR, true, INSTROP_SYMREGRANGE|INSTROP_READ);
+            else
+                // we don't know whether is
+                good &= parseVRegRange(asmr, linePtr, vaddrReg, 0,
+                        GCNFIELD_FLAT_ADDR, true, INSTROP_SYMREGRANGE|INSTROP_READ);
         }
     }
     else
@@ -903,14 +1092,78 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
         }
     }
     
+    bool moveRVUNext = false;
+    
     if ((gcnInsn.mode & GCN_FLAT_NODATA) == 0) /* print data */
     {
-        if (!skipRequiredComma(asmr, linePtr))
-            return false;
-        gcnAsm->setCurrentRVU(2);
-        // parse VDATA (VGPRS, 1-4 registers)
-        good &= parseVRegRange(asmr, linePtr, vdataReg, dregsNum, GCNFIELD_FLAT_DATA,
-                               true, INSTROP_SYMREGRANGE|INSTROP_READ);
+        if (!atomic)
+        {
+            if (!skipRequiredComma(asmr, linePtr))
+                return false;
+            gcnAsm->setCurrentRVU(2);
+            // parse VDATA (VGPRS, 1-4 registers)
+            good &= parseVRegRange(asmr, linePtr, vdataReg, dregsNum, GCNFIELD_FLAT_DATA,
+                                true, INSTROP_SYMREGRANGE|INSTROP_READ);
+        }
+        else if (flatMode != 0)
+        {
+            const char* oldLinePtr = linePtr;
+            if (!skipRequiredComma(asmr, linePtr))
+                return false;
+            gcnAsm->setCurrentRVU(2);
+            good &= parseVRegRange(asmr, linePtr, vdataReg, dregsNum, GCNFIELD_FLAT_DATA,
+                                false, INSTROP_SYMREGRANGE|INSTROP_READ);
+            if (!vdataReg)
+            {
+                // this is shorten version
+                linePtr = oldLinePtr;
+                moveRVUNext = true;
+            }
+        }
+        else
+        {
+            bool haveComma = false;
+            if (!skipComma(asmr, haveComma, linePtr, false))
+                return false;
+            if (!haveComma)
+                // this is shorten version
+                moveRVUNext = true;
+            else
+            {
+                gcnAsm->setCurrentRVU(2);
+                good &= parseVRegRange(asmr, linePtr, vdataReg, dregsNum, GCNFIELD_FLAT_DATA,
+                                true, INSTROP_SYMREGRANGE|INSTROP_READ);
+            }
+        }
+    }
+    
+    if (moveRVUNext)
+    {
+        // shorten version for atomic
+        gcnAsm->moveRVUToNext(1);
+        gcnAsm->moveRVUToNext(0);
+        gcnAsm->setRVUFieldAndRWFlags(2, GCNFIELD_FLAT_DATA, ASMRVU_READ);
+        gcnAsm->setRVUFieldAndRWFlags(1, GCNFIELD_FLAT_ADDR, ASMRVU_READ);
+        vaddrOff = vdstOff;
+        vdstOff = false;
+        vdataReg = vaddrReg;
+        vaddrReg = vdstReg;
+        vdstReg = RegRange(0, 0);
+        // checking register number
+        if (addrRegsNum!=0 && !isXRegRange(vaddrReg, addrRegsNum))
+        {
+            char errorMsg[40];
+            snprintf(errorMsg, 40, "Required %u vector register%s", addrRegsNum,
+                     (addrRegsNum>1) ? "s" : "");
+            ASM_NOTGOOD_BY_ERROR(vdstPlace, errorMsg)
+        }
+        if (!isXRegRange(vdataReg, dregsNum))
+        {
+            char errorMsg[40];
+            snprintf(errorMsg, 40, "Required %u vector register%s", dregsNum,
+                     (dregsNum>1) ? "s" : "");
+            ASM_NOTGOOD_BY_ERROR(addrPlace, errorMsg)
+        }
     }
     
     bool saddrOff = false;
@@ -934,6 +1187,8 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
                         INSTROP_SYMREGRANGE|INSTROP_READ);
         }
     }
+    else if (isGCN15)
+        saddrReg = { 125, 125 };
     
     if (addrRegsNum == 0)
     {
@@ -954,7 +1209,7 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
                     "SCRATCH mode")
     
     if (saddrOff)
-        saddrReg.start = 0x7f;
+        saddrReg.start = isGCN15 ? 0x7d : 0x7f;
     if (vaddrOff)
         vaddrReg.start = 0x00;
     
@@ -962,6 +1217,7 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
     std::unique_ptr<AsmExpression> instOffsetExpr;
     bool haveTfe = false, haveSlc = false, haveGlc = false;
     bool haveNv = false, haveLds = false, haveInstOffset = false;
+    bool haveDlc = false;
     
     // main loop to parsing FLAT modifiers
     while(linePtr!=end)
@@ -978,7 +1234,7 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
             continue;
         }
         // only GCN1.2 modifiers
-        if (!isGCN14 && ::strcmp(name, "tfe") == 0)
+        if (!isGCN14 && !isGCN15 && ::strcmp(name, "tfe") == 0)
             good &= parseModEnable(asmr, linePtr, haveTfe, "tfe modifier");
         // only GCN1.4 modifiers
         else if (isGCN14 && ::strcmp(name, "nv") == 0)
@@ -988,13 +1244,23 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
         // GCN 1.2/1.4 modifiers
         else if (::strcmp(name, "glc") == 0)
             good &= parseModEnable(asmr, linePtr, haveGlc, "glc modifier");
+        else if (isGCN15 && ::strcmp(name, "dlc") == 0)
+            good &= parseModEnable(asmr, linePtr, haveDlc, "dlc modifier");
         else if (::strcmp(name, "slc") == 0)
             good &= parseModEnable(asmr, linePtr, haveSlc, "slc modifier");
-        else if (isGCN14 && ::strcmp(name, "inst_offset")==0)
+        else if ((isGCN14 || isGCN15) && (::strcmp(name, "inst_offset")==0 ||
+                            ::strcmp(name, "offset")==0))
         {
             // parse inst_offset, 13-bit with sign, or 12-bit unsigned
+            cxbyte bits = flatMode!=0 ? 13 : 12;
+            cxbyte wssign = flatMode!=0 ? WS_BOTH : WS_UNSIGNED;
+            if (isGCN15)
+            {
+                bits = 11;
+                wssign = WS_UNSIGNED;
+            }
             if (parseModImm(asmr, linePtr, instOffset, &instOffsetExpr, "inst_offset",
-                            flatMode!=0 ? 13 : 12, flatMode!=0 ? WS_BOTH : WS_UNSIGNED))
+                            bits, wssign))
             {
                 if (haveInstOffset)
                     asmr.printWarning(modPlace, "InstOffset is already defined");
@@ -1006,6 +1272,13 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
         else
             ASM_NOTGOOD_BY_ERROR(modPlace, "Unknown FLAT modifier")
     }
+    
+    if (vdstOff)
+        ASM_NOTGOOD_BY_ERROR(instrPlace, "OFF in VDST field is illegal")
+    
+    if (moveRVUNext && haveGlc)
+        ASM_NOTGOOD_BY_ERROR(instrPlace, "GLC modifier requires VDST field")
+    
     /* check register ranges */
     bool dstToWrite = vdstReg && ((gcnInsn.mode & GCN_MATOMIC)==0 || haveGlc);
     if (vdstReg)
@@ -1071,15 +1344,15 @@ bool GCNAsmUtils::parseFLATEncoding(Assembler& asmr, const GCNAsmInstruction& gc
                             gcnAsm->instrRVUs[2].rwFlags : 0) };
     
     if (instOffsetExpr!=nullptr)
-        instOffsetExpr->setTarget(AsmExprTarget(flatMode!=0 ?
-                    GCNTGT_INSTOFFSET_S : GCNTGT_INSTOFFSET, asmr.currentSection,
-                    output.size()));
+        instOffsetExpr->setTarget(AsmExprTarget(isGCN15 ? GCNTGT_INSTOFFSET_GFX10 :
+                    (flatMode!=0 ? GCNTGT_INSTOFFSET_S : GCNTGT_INSTOFFSET),
+                    asmr.currentSection, output.size()));
     
     // put data (instruction words)
     uint32_t words[2];
     SLEV(words[0], 0xdc000000U | (haveGlc ? 0x10000 : 0) | (haveSlc ? 0x20000: 0) |
             (uint32_t(gcnInsn.code1)<<18) | (haveLds ? 0x2000U : 0) | instOffset |
-            (uint32_t(flatMode)<<14));
+            (uint32_t(haveDlc)<<12) | (uint32_t(flatMode)<<14));
     SLEV(words[1], (vaddrReg.bstart()&0xff) | (uint32_t(vdataReg.bstart()&0xff)<<8) |
             (haveTfe|haveNv ? (1U<<23) : 0) | (uint32_t(vdstReg.bstart()&0xff)<<24) |
             (uint32_t(saddrReg.bstart())<<16));

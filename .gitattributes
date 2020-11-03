@@ -9,6 +9,7 @@ CLRX/amdasm/Assembler.h -text
 CLRX/amdasm/Commons.h -text
 CLRX/amdasm/Disassembler.h -text
 CLRX/amdasm/GCNDefs.h -text
+CLRX/amdbin/Amd3Binaries.h -text
 CLRX/amdbin/AmdBinGen.h -text
 CLRX/amdbin/AmdBinaries.h -text
 CLRX/amdbin/AmdCL2BinGen.h -text
@@ -77,6 +78,7 @@ amdasm/GCNDisasmDecode.cpp -text
 amdasm/GCNDisasmInternals.h -text
 amdasm/GCNInstructions.cpp -text
 amdasm/GCNInternals.h -text
+amdbin/Amd3Binaries.cpp -text
 amdbin/AmdBinGen.cpp -text
 amdbin/AmdBinaries.cpp -text
 amdbin/AmdCL2BinGen.cpp -text
@@ -85,6 +87,8 @@ amdbin/CMakeLists.txt -text svneol=unset#text/plain
 amdbin/ElfBinaries.cpp -text
 amdbin/GalliumBinaries.cpp -text
 amdbin/ROCmBinaries.cpp -text
+amdbin/ROCmMetadata.cpp -text
+amdbin/ROCmMetadataMP.cpp -text
 clhelper/CLHelper.cpp -text
 clhelper/CMakeLists.txt -text svneol=unset#text/plain
 clwrapper/CLFunctions1.cpp -text
@@ -194,12 +198,14 @@ tests/amdasm/GCNAsmOpc.h -text
 tests/amdasm/GCNAsmOpc11.cpp -text
 tests/amdasm/GCNAsmOpc12.cpp -text
 tests/amdasm/GCNAsmOpc14.cpp -text
+tests/amdasm/GCNAsmOpc15.cpp -text
 tests/amdasm/GCNAsmOpcodes.cpp -text
 tests/amdasm/GCNDisasmLabels.cpp -text
 tests/amdasm/GCNDisasmOpc.h -text
 tests/amdasm/GCNDisasmOpc11.cpp -text
 tests/amdasm/GCNDisasmOpc12.cpp -text
 tests/amdasm/GCNDisasmOpc14.cpp -text
+tests/amdasm/GCNDisasmOpc15.cpp -text
 tests/amdasm/GCNDisasmOpcodes.cpp -text
 tests/amdasm/GCNRegVarUsage.cpp -text
 tests/amdasm/GCNWaitHandle.cpp -text
@@ -215,6 +221,7 @@ tests/amdasm/amdbins/rocm-fiji.hsaco -text svneol=unset#application/x-sharedlib
 tests/amdasm/amdbins/samplekernels.cl -text
 tests/amdasm/amdbins/samplekernels.clo -text svneol=unset#application/x-executable
 tests/amdasm/amdbins/samplekernels_64.clo -text svneol=unset#application/x-executable
+tests/amdasm/amdbins/two_kernels-rocm-llvm10.clo -text svneol=unset#application/x-sharedlib
 tests/amdasm/incdir0/inc1.s -text
 tests/amdasm/incdir0/inc2.s -text
 tests/amdasm/incdir0/incbin1 -text svneol=unset#application/octet-stream
@@ -228,6 +235,8 @@ tests/amdbin/CMakeLists.txt -text svneol=unset#text/plain
 tests/amdbin/GalliumBinGen.cpp -text
 tests/amdbin/ROCmBinGen.cpp -text
 tests/amdbin/ROCmMetadata.cpp -text
+tests/amdbin/ROCmMsgPack.cpp -text
+tests/amdbin/ROCmMsgPackWrite.cpp -text
 tests/amdbin/amdbins/alltypes-15_11.clo -text svneol=unset#application/x-executable
 tests/amdbin/amdbins/alltypes-15_7.clo -text svneol=unset#application/x-executable
 tests/amdbin/amdbins/alltypes.cl -text

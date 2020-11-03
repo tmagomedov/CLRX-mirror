@@ -147,6 +147,9 @@ struct CLRX_INTERNAL VOPExtraModifiers
     uint16_t dppCtrl;
     bool needSDWA;
     bool needDPP;
+    bool fi; // DPP GFX10
+    bool needDPP8;
+    uint32_t dpp8Value;
 };
 
 // VOP operand modifiers (booleans)
@@ -205,6 +208,10 @@ struct CLRX_INTERNAL GCNAsmUtils: AsmParseUtils
                    cxuint regsNum, AsmRegField regField, bool required = true,
                    Flags flags = INSTROP_SYMREGRANGE);
     /* return true if no error */
+    static bool parseVRegRangesLimited(Assembler& asmr, const char*& linePtr,
+                   cxuint vgprsLimit, std::vector<RegRange>& regPairs,
+                   AsmRegField regField, Flags flags = INSTROP_SYMREGRANGE);
+    /* return true if no error */
     static bool parseSRegRange(Assembler& asmr, const char*& linePtr, RegRange& regPair,
                    GPUArchMask arch, cxuint regsNum, AsmRegField regField,
                    bool required = true, Flags flags = INSTROP_SYMREGRANGE);
@@ -214,6 +221,8 @@ struct CLRX_INTERNAL GCNAsmUtils: AsmParseUtils
     static bool parseImmInt(Assembler& asmr, const char*& linePtr, uint32_t& value,
             std::unique_ptr<AsmExpression>* outTargetExpr, cxuint bits = 0,
             cxbyte signess = WS_BOTH);
+    static bool parseSMRDImm(Assembler& asmr, const char*& linePtr, uint32_t& value,
+            std::unique_ptr<AsmExpression>* outTargetExpr, bool &litimm);
     
     // parse immediate value (for field) with specified bits (can be signed)
     template<typename T>
@@ -303,13 +312,13 @@ struct CLRX_INTERNAL GCNAsmUtils: AsmParseUtils
     static bool checkGCNEncodingSize(Assembler& asmr, const char* insnPtr,
                      GCNEncSize gcnEncSize, uint32_t wordsNum);
     // checking whether VOP encoding is match
-    static bool checkGCNVOPEncoding(Assembler& asmr, const char* insnPtr,
-                     GCNVOPEnc vopEnc, const VOPExtraModifiers* modifiers);
+    static bool checkGCNVOPEncoding(Assembler& asmr, GPUArchMask arch, const char* insnPtr,
+            GCNVOPEnc vopEnc, GCNInsnMode insnMode, const VOPExtraModifiers* modifiers);
     // checking whether VOP extra modifiers match
     static bool checkGCNVOPExtraModifers(Assembler& asmr, GPUArchMask arch,
                  bool needImm, bool sextFlags, bool vop3, GCNVOPEnc gcnVOPEnc,
                  const GCNOperand& src0Op, VOPExtraModifiers& extraMods,
-                 const char* instrPlace);
+                 bool absNegFlags, const char* instrPlace);
     
     // routines to parse GCN encodings
     static bool parseSOP2Encoding(Assembler& asmr, const GCNAsmInstruction& gcnInsn,

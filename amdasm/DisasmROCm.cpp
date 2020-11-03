@@ -52,6 +52,16 @@ ROCmDisasmInput* CLRX::getROCmDisasmInputFromBinary(const ROCmBinary& binary)
         input->regions[i] = { region.regionName, size_t(region.size),
             size_t(region.offset - codeOffset), region.type };
     }
+    if (binary.isLLVM10BinaryFormat())
+    {
+        input->kernelDescs.resize(regionsNum, ROCmDisasmKernelDescInfo{});
+        for (size_t i = 0; i < regionsNum; i++)
+        {
+            input->kernelDescs[i].sectionOffset = reinterpret_cast<const cxbyte*>(
+                binary.getKernelDescriptor(i)) - binary.getGlobalData();
+            input->kernelDescs[i].desc = binary.getKernelDescriptor(i);
+        }
+    }
     
     const size_t gotSymbolsNum = binary.getGotSymbolsNum();
     input->gotSymbols.resize(gotSymbolsNum);
@@ -89,7 +99,135 @@ ROCmDisasmInput* CLRX::getROCmDisasmInputFromBinary(const ROCmBinary& binary)
     input->globalDataSize = binary.getGlobalDataSize();
     input->target = binary.getTarget();
     input->newBinFormat = binary.isNewBinaryFormat();
+    input->llvm10BinFormat = binary.isLLVM10BinaryFormat();
+    input->metadataV3 = binary.isMetadataV3Format();
     return input.release();
+}
+
+static void dumpKernelDescriptor(std::ostream& output, cxuint maxSgprsNum,
+                GPUArchitecture arch, const ROCmKernelDescriptor& kdesc)
+{
+    uint32_t groupSegmentFixedSize = ULEV(kdesc.groupSegmentFixedSize);
+    uint32_t privateSegmentFixedSize = ULEV(kdesc.privateSegmentFixedSize);
+    uint64_t kernelCodeEntryOffset = ULEV(kdesc.kernelCodeEntryOffset);
+    uint32_t computePgmRsrc3 = ULEV(kdesc.pgmRsrc3);
+    uint32_t computePgmRsrc1 = ULEV(kdesc.pgmRsrc1);
+    uint32_t computePgmRsrc2 = ULEV(kdesc.pgmRsrc2);
+    uint16_t initialKernelExecState = ULEV(kdesc.initialKernelExecState);
+    
+    size_t bufSize;
+    char buf[100];
+    const cxuint ldsShift = arch<GPUArchitecture::GCN1_1 ? 8 : 9;
+    const uint32_t pgmRsrc1 = computePgmRsrc1;
+    const uint32_t pgmRsrc2 = computePgmRsrc2;
+    
+    output.write("    .config\n", 12);
+    
+    const cxuint dimMask = getDefaultDimMask(arch, pgmRsrc2);
+    // print dims (hsadims for gallium): .[hsa_]dims xyz
+    strcpy(buf, "        .dims ");
+    bufSize = 14;
+    if ((dimMask & 1) != 0)
+        buf[bufSize++] = 'x';
+    if ((dimMask & 2) != 0)
+        buf[bufSize++] = 'y';
+    if ((dimMask & 4) != 0)
+        buf[bufSize++] = 'z';
+    if ((dimMask & 7) != ((dimMask>>3) & 7))
+    {
+        buf[bufSize++] = ',';
+        buf[bufSize++] = ' ';
+        if ((dimMask & 8) != 0)
+            buf[bufSize++] = 'x';
+        if ((dimMask & 16) != 0)
+            buf[bufSize++] = 'y';
+        if ((dimMask & 32) != 0)
+            buf[bufSize++] = 'z';
+    }
+    buf[bufSize++] = '\n';
+    output.write(buf, bufSize);
+    
+    bufSize = snprintf(buf, 100, "        .sgprsnum %u\n",
+            std::min((((pgmRsrc1>>6) & 0xf)<<3)+8, maxSgprsNum));
+    output.write(buf, bufSize);
+    const cxuint vgprsNum = arch < GPUArchitecture::GCN1_5 ? ((pgmRsrc1 & 0x3f)<<2)+4 :
+                ((pgmRsrc1 & 0x3f)<<3)+8;
+    bufSize = snprintf(buf, 100, "        .vgprsnum %u\n", vgprsNum);
+    output.write(buf, bufSize);
+    if (arch >= GPUArchitecture::GCN1_5)
+    {
+        bufSize = snprintf(buf, 100, "        .shared_vgprs %u\n",
+                           (computePgmRsrc3 & 15)<<3);
+        output.write(buf, bufSize);
+    }
+    if ((pgmRsrc1 & (1U<<20)) != 0)
+        output.write("        .privmode\n", 18);
+    if ((pgmRsrc1 & (1U<<22)) != 0)
+        output.write("        .debugmode\n", 19);
+    if ((pgmRsrc1 & (1U<<21)) != 0)
+        output.write("        .dx10clamp\n", 19);
+    if ((pgmRsrc1 & (1U<<23)) != 0)
+        output.write("        .ieeemode\n", 18);
+    if ((pgmRsrc2 & 0x400) != 0)
+        output.write("        .tgsize\n", 16);
+    
+    bufSize = snprintf(buf, 100, "        .floatmode 0x%02x\n", (pgmRsrc1>>12) & 0xff);
+    output.write(buf, bufSize);
+    bufSize = snprintf(buf, 100, "        .priority %u\n", (pgmRsrc1>>10) & 3);
+    output.write(buf, bufSize);
+    if (((pgmRsrc1>>24) & 0x7f) != 0)
+    {
+        bufSize = snprintf(buf, 100, "        .exceptions 0x%02x\n",
+                (pgmRsrc1>>24) & 0x7f);
+        output.write(buf, bufSize);
+    }
+    const cxuint localSize = ((pgmRsrc2>>15) & 0x1ff) << ldsShift;
+    if (localSize!=0)
+    {
+        bufSize = snprintf(buf, 100, "        .localsize %u\n", localSize);
+        output.write(buf, bufSize);
+    }
+    bufSize = snprintf(buf, 100, "        .userdatanum %u\n", (pgmRsrc2>>1) & 0x1f);
+    output.write(buf, bufSize);
+    
+    bufSize = snprintf(buf, 100, "        .pgmrsrc1 0x%08x\n", pgmRsrc1);
+    output.write(buf, bufSize);
+    bufSize = snprintf(buf, 100, "        .pgmrsrc2 0x%08x\n", pgmRsrc2);
+    output.write(buf, bufSize);
+    if (arch >= GPUArchitecture::GCN1_5)
+    {
+        bufSize = snprintf(buf, 100, "        .pgmrsrc3 0x%08x\n", computePgmRsrc3);
+        output.write(buf, bufSize);
+    }
+    
+    bufSize = snprintf(buf, 100, "        .group_segment_fixed_size %u\n",
+                        groupSegmentFixedSize);
+    output.write(buf, bufSize);
+    bufSize = snprintf(buf, 100, "        .private_segment_fixed_size %u\n",
+                        privateSegmentFixedSize);
+    output.write(buf, bufSize);
+    bufSize = snprintf(buf, 100, "        .kernel_code_entry_offset 0x%" PRIx64 "\n",
+                       kernelCodeEntryOffset);
+    output.write(buf, bufSize);
+    
+    const uint16_t sgprFlags = initialKernelExecState;
+    // print SGPRregister flags (features)
+    if ((sgprFlags&ROCMFLAG_USE_PRIVATE_SEGMENT_BUFFER) != 0)
+        output.write("        .use_private_segment_buffer\n", 36);
+    if ((sgprFlags&ROCMFLAG_USE_DISPATCH_PTR) != 0)
+        output.write("        .use_dispatch_ptr\n", 26);
+    if ((sgprFlags&ROCMFLAG_USE_QUEUE_PTR) != 0)
+        output.write("        .use_queue_ptr\n", 23);
+    if ((sgprFlags&ROCMFLAG_USE_KERNARG_SEGMENT_PTR) != 0)
+        output.write("        .use_kernarg_segment_ptr\n", 33);
+    if ((sgprFlags&ROCMFLAG_USE_DISPATCH_ID) != 0)
+        output.write("        .use_dispatch_id\n", 25);
+    if ((sgprFlags&ROCMFLAG_USE_FLAT_SCRATCH_INIT) != 0)
+        output.write("        .use_flat_scratch_init\n", 31);
+    if ((sgprFlags&ROCMFLAG_USE_PRIVATE_SEGMENT_SIZE) != 0)
+        output.write("        .use_private_segment_size\n", 34);
+    if ((sgprFlags&AMDHSAFLAG_USE_WAVE32) != 0)
+        output.write("        .use_wave32\n", 20);
 }
 
 void CLRX::dumpAMDHSAConfig(std::ostream& output, cxuint maxSgprsNum,
@@ -438,7 +576,8 @@ static void dumpKernelConfig(std::ostream& output, cxuint maxSgprsNum,
 void CLRX::disassembleAMDHSACode(std::ostream& output,
             const std::vector<ROCmDisasmRegionInput>& regions,
             size_t codeSize, const cxbyte* code, ISADisassembler* isaDisassembler,
-            Flags flags)
+            Flags flags, bool llvm10BinFormat,
+            const std::vector<ROCmDisasmKernelDescInfo>& kernelDescs)
 {
     const bool doDumpData = ((flags & DISASM_DUMPDATA) != 0);
     const bool doMetadata = ((flags & (DISASM_METADATA|DISASM_CONFIG)) != 0);
@@ -465,17 +604,20 @@ void CLRX::disassembleAMDHSACode(std::ostream& output,
         isaDisassembler->analyzeBeforeDisassemble();
     }
     
+    const size_t kconfigSize = llvm10BinFormat ? 0 : 256;
+    
     for (size_t i = 0; i < regionsNum; i++)
     {
         const ROCmDisasmRegionInput& region = regions[sorted[i].second];
         if ((region.type==ROCmRegionType::KERNEL ||
              region.type==ROCmRegionType::FKERNEL) && doDumpCode)
         {
-            if (region.offset+256 > codeSize)
+            if (region.offset+kconfigSize > codeSize)
                 throw DisasmException("Region Offset out of range");
             // kernel code begin after HSA config
-            isaDisassembler->setInput(region.size-256, code + region.offset+256,
-                                region.offset+256);
+            isaDisassembler->setInput(region.size-kconfigSize,
+                                code + region.offset+kconfigSize,
+                                region.offset+kconfigSize);
             isaDisassembler->analyzeBeforeDisassemble();
         }
         isaDisassembler->addNamedLabel(region.offset, region.regionName);
@@ -528,19 +670,32 @@ void CLRX::disassembleAMDHSACode(std::ostream& output,
         }
         if (region.type!=ROCmRegionType::DATA)
         {
-            if (doMetadata)
+            if (doMetadata && !llvm10BinFormat)
             {
                 if (!doDumpConfig)
                     printDisasmData(0x100, code + region.offset, output, true);
-                else    // skip, config was dumped in kernel configuration
+                else if (kconfigSize!=0)
+                    // skip, config was dumped in kernel configuration
                     output.write(".skip 256\n", 10);
             }
             
-            if (doDumpCode)
+            if (doDumpCode && dataSize >= kconfigSize)
             {
                 // dump code of region
-                isaDisassembler->setInput(dataSize-256, code + region.offset+256,
-                                region.offset+256, region.offset+1);
+                isaDisassembler->setInput(dataSize-kconfigSize,
+                                code + region.offset+kconfigSize,
+                                region.offset+kconfigSize, region.offset+1);
+                if (llvm10BinFormat)
+                {
+                    const ROCmKernelDescriptor* kdesc = kernelDescs[sorted[i].second].desc;
+                    if (kdesc!=nullptr)
+                    {
+                        Flags flags = isaDisassembler->getFlags() & ~DISASM_WAVE32;
+                        if (ULEV(kdesc->initialKernelExecState) & ROCMFLAG_USE_WAVE32)
+                            flags |= DISASM_WAVE32;
+                        isaDisassembler->setFlags(flags);
+                    }
+                }
                 isaDisassembler->setDontPrintLabels(i+1<regionsNum);
                 isaDisassembler->disassemble();
             }
@@ -587,7 +742,7 @@ static inline bool hasValue(uint64_t value)
 static const char* disasmROCmValueKindNames[] =
 {
     "value", "globalbuf", "dynshptr", "sampler", "image", "pipe", "queue",
-    "gox", "goy", "goz", "none", "printfbuf", "defqueue", "complact"
+    "gox", "goy", "goz", "none", "printfbuf", "defqueue", "complact", "multigridsyncarg"
 };
 
 static const char* disasmROCmValueTypeNames[] =
@@ -603,7 +758,6 @@ static void dumpKernelMetadataInfo(std::ostream& output, const ROCmKernelMetadat
 {
     output.write("    .config\n", 12);
     output.write("        .md_symname \"", 21);
-    //output.write(kernel.symbolName.c_str(), kernel.symbolName.size());
     {
         std::string symName = escapeStringCStyle(kernel.symbolName);
         output.write(symName.c_str(), symName.size());
@@ -822,7 +976,11 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
     bool haveMetadataInfo = false;
     if (doDumpConfig && rocmInput->metadata!=nullptr)
     {
-        metadataInfo.parse(rocmInput->metadataSize, rocmInput->metadata);
+        if (!rocmInput->metadataV3)
+            metadataInfo.parse(rocmInput->metadataSize, rocmInput->metadata);
+        else
+            metadataInfo.parseMsgPack(rocmInput->metadataSize,
+                        reinterpret_cast<const cxbyte*>(rocmInput->metadata));
         haveMetadataInfo = true;
     }
     
@@ -843,8 +1001,12 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
         output.write(buf, size);
     }
     
-    if (rocmInput->newBinFormat)
+    if (rocmInput->llvm10BinFormat)
+        output.write(".llvm10binfmt\n", 14);
+    else if (rocmInput->newBinFormat)
         output.write(".newbinfmt\n", 11);
+    if (rocmInput->metadataV3)
+        output.write(".metadatav3\n", 12);
     
     if (!rocmInput->target.empty())
     {
@@ -880,7 +1042,33 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
     {
         output.write(".globaldata\n", 12);
         output.write(".gdata:\n", 8); /// symbol used by text relocations
-        printDisasmData(rocmInput->globalDataSize, rocmInput->globalData, output);
+        if (!rocmInput->llvm10BinFormat || !doDumpConfig)
+            printDisasmData(rocmInput->globalDataSize, rocmInput->globalData, output);
+        else
+        {
+            Array<size_t> kdescOffsets(rocmInput->kernelDescs.size());
+            for (size_t i = 0; i < rocmInput->kernelDescs.size(); i++)
+                kdescOffsets[i] = rocmInput->kernelDescs[i].sectionOffset;
+            std::sort(kdescOffsets.begin(), kdescOffsets.end());
+            auto kdit = kdescOffsets.begin();
+            for (size_t p = 0; p < rocmInput->globalDataSize; )
+            {
+                const size_t end = (kdit != kdescOffsets.end() &&
+                        *kdit < rocmInput->globalDataSize) ?
+                        *kdit : rocmInput->globalDataSize;
+                if (kdit == kdescOffsets.end() || p < *kdit)
+                {
+                    printDisasmData(end-p, rocmInput->globalData+p, output);
+                    p = end;
+                }
+                if (kdit != kdescOffsets.end() && p == *kdit)
+                {
+                    output.write(".skip 64\n", 9);
+                    p += 64;
+                    ++kdit;
+                }
+            }
+        }
     }
     
     if (doMetadata && !doDumpConfig &&
@@ -925,7 +1113,9 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
     }
     
     // dump kernel config
-    for (const ROCmDisasmRegionInput& rinput: rocmInput->regions)
+    for (size_t i = 0; i < rocmInput->regions.size(); i++)
+    {
+        const ROCmDisasmRegionInput& rinput = rocmInput->regions[i];
         if (rinput.type != ROCmRegionType::DATA)
         {
             output.write(".kernel ", 8);
@@ -935,9 +1125,13 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
                 output.write("    .fkernel\n", 13);
             if (doDumpConfig)
             {
-                dumpKernelConfig(output, maxSgprsNum, arch,
-                     *reinterpret_cast<const ROCmKernelConfig*>(
-                             rocmInput->code + rinput.offset));
+                if (!rocmInput->llvm10BinFormat)
+                    dumpKernelConfig(output, maxSgprsNum, arch,
+                        *reinterpret_cast<const ROCmKernelConfig*>(
+                                rocmInput->code + rinput.offset));
+                else if (rocmInput->kernelDescs[i].desc!=nullptr)
+                    dumpKernelDescriptor(output, maxSgprsNum, arch,
+                                *(rocmInput->kernelDescs[i].desc));
                 
                 if (!haveMetadataInfo)
                     continue; // no metatadata info
@@ -949,9 +1143,11 @@ void CLRX::disassembleROCm(std::ostream& output, const ROCmDisasmInput* rocmInpu
                 dumpKernelMetadataInfo(output, metadataInfo.kernels[it->second]);
             }
         }
+    }
     
     // disassembly code in HSA form
     if (rocmInput->code != nullptr && rocmInput->codeSize != 0)
         disassembleAMDHSACode(output, rocmInput->regions,
-                        rocmInput->codeSize, rocmInput->code, isaDisassembler, flags);
+                    rocmInput->codeSize, rocmInput->code, isaDisassembler,
+                    flags, rocmInput->llvm10BinFormat, rocmInput->kernelDescs);
 }

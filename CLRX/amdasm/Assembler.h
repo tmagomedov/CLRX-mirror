@@ -62,10 +62,16 @@ enum: Flags
     ASM_BUGGYFPLIT = 8, ///< buggy handling of fpliterals (including fp constants)
     ASM_MACRONOCASE = 16, /// disable case-insensitive naming (default)
     ASM_OLDMODPARAM = 32,   ///< use old modifier parametrization (values 0 and 1 only)
+    ASM_WAVE32 = 64, ///< use WAVESIZE32
     ASM_TESTRESOLVE = (1U<<30), ///< enable resolving symbols if ASM_TESTRUN enabled
     ASM_TESTRUN = (1U<<31), ///< only for running tests
     ASM_ALL = FLAGS_ALL&~(ASM_TESTRUN|ASM_TESTRESOLVE|ASM_BUGGYFPLIT|ASM_MACRONOCASE|
-                    ASM_OLDMODPARAM)  ///< all flags
+                    ASM_WAVE32|ASM_OLDMODPARAM)  ///< all flags
+};
+
+enum: Flags
+{
+    ASM_CODE_WAVE32 = 1
 };
 
 struct AsmRegVar;
@@ -242,12 +248,15 @@ public:
                  AsmSectionId sectionId, uint64_t value) = 0;
     /// check if name is mnemonic
     virtual bool checkMnemonic(const CString& mnemonic) const = 0;
+    virtual Flags getImportantCodeFlags() const = 0;
     /// set allocated registers (if regs is null then reset them)
     virtual void setAllocatedRegisters(const cxuint* regs = nullptr,
                 Flags regFlags = 0) = 0;
+    void setCodeFlags(Flags codeFlags);
     /// get allocated register numbers after assemblying
     virtual const cxuint* getAllocatedRegisters(size_t& regTypesNum,
                 Flags& regFlags) const = 0;
+    Flags getCodeFlags() const;
     /// get max registers number
     virtual void getMaxRegistersNum(size_t& regTypesNum, cxuint* maxRegs) const = 0;
     /// get registers ranges
@@ -310,6 +319,9 @@ private:
     
     void setRegVarUsage(const AsmRegVarUsage& rvu);
     
+    void moveRVUToNext(cxbyte index);
+    void setRVUFieldAndRWFlags(cxbyte index, AsmRegField rfield, cxbyte rwFlags);
+    
     void flushInstrRVUs(ISAUsageHandler* usageHandler)
     {
         for (const AsmRegVarUsage& rvu: instrRVUs)
@@ -341,6 +353,7 @@ public:
                  cxbyte* sectionData, size_t offset, AsmExprTargetType targetType,
                  AsmSectionId sectionId, uint64_t value);
     bool checkMnemonic(const CString& mnemonic) const;
+    Flags getImportantCodeFlags() const;
     void setAllocatedRegisters(const cxuint* regs, Flags regFlags);
     const cxuint* getAllocatedRegisters(size_t& regTypesNum, Flags& regFlags) const;
     void getMaxRegistersNum(size_t& regTypesNum, cxuint* maxRegs) const;
@@ -552,6 +565,8 @@ private:
     uint32_t llvmVersion; // GalliumCompute
     bool _64bit;    ///
     bool newROCmBinFormat;
+    bool llvm10BinFormat;
+    bool rocmMetadataV3;
     bool good;
     bool resolvingRelocs;
     bool doNotRemoveFromSymbolClones;
@@ -580,6 +595,7 @@ private:
     bool buggyFPLit;
     bool macroCase;
     bool oldModParam;
+    Flags codeFlags;
     
     cxuint inclusionLevel;
     cxuint macroSubstLevel;
@@ -863,6 +879,18 @@ public:
     /// set new ROCm binary format
     void setNewROCmBinFormat(bool newFmt)
     { newROCmBinFormat = newFmt; }
+    /// is new ROCm LLVM10 binary format
+    bool isLLVM10BinFormat() const
+    { return llvm10BinFormat; }
+    /// set new ROCm LLVM10 binary format
+    void setLLVM10BinFormat(bool newFmt)
+    { llvm10BinFormat = newFmt; }
+    /// is new ROCm metadata V3 format
+    bool isROCmMetadataV3() const
+    { return rocmMetadataV3; }
+    /// is new ROCm metadata V3 format
+    void setROCmMetadataV3(bool newFmt)
+    { rocmMetadataV3 = newFmt; }
     /// get policy version
     cxuint getPolicyVersion() const
     { return policyVersion; }
@@ -875,6 +903,12 @@ public:
     /// set flags
     void setFlags(Flags flags)
     { this->flags = flags; }
+    /// get code flags
+    Flags getCodeFlags() const
+    { return codeFlags; }
+    /// set code flags
+    void setCodeFlags(Flags flags)
+    { this->codeFlags = flags; }
     /// get true if altMacro enabled
     bool isAltMacro() const
     { return alternateMacro; }
@@ -953,6 +987,12 @@ inline void ISAAssembler::printError(const AsmSourcePos& sourcePos, const char* 
 inline void ISAAssembler::addCodeFlowEntry(AsmSectionId sectionId,
                     const AsmCodeFlowEntry& entry)
 { assembler.sections[sectionId].addCodeFlowEntry(entry); }
+
+inline void ISAAssembler::setCodeFlags(Flags codeFlags)
+{ assembler.setCodeFlags(codeFlags); }
+
+inline Flags ISAAssembler::getCodeFlags() const
+{ return assembler.getCodeFlags(); }
 
 };
 

@@ -53,6 +53,8 @@ static const CLIOption programOptions[] =
         "set GPU type for Gallium/raw binaries", "DEVICE" },
     { "arch", 'A', CLIArgType::TRIMMED_STRING, false, false,
         "set GPU architecture for Gallium/raw binaries", "ARCH" },
+    { "wave32", '3', CLIArgType::NONE, false, false,
+        "set wavefront size as 32 elements", nullptr },
     { "driverVersion", 't', CLIArgType::UINT, false, false,
         "set driver version (for AmdCL2)", "VERSION" },
     { "llvmVersion", 0, CLIArgType::UINT, false, false,
@@ -91,15 +93,23 @@ try
      disasmFlags |= (cli.hasShortOption('C')?DISASM_CONFIG:0) |
              (cli.hasLongOption("buggyFPLit")?DISASM_BUGGYFPLIT:0) |
              (cli.hasShortOption('H')?DISASM_HSACONFIG:0) |
-             (cli.hasShortOption('L')?DISASM_HSALAYOUT:0);
+             (cli.hasShortOption('L')?DISASM_HSALAYOUT:0) |
+             (cli.hasShortOption('3')?DISASM_WAVE32:0);
     
+    bool hasGPUDeviceType = false;
     GPUDeviceType gpuDeviceType = GPUDeviceType::CAPE_VERDE;
     const bool fromRawCode = cli.hasShortOption('r');
     if (cli.hasShortOption('g'))
+    {
         gpuDeviceType = getGPUDeviceTypeFromName(cli.getShortOptArg<const char*>('g'));
+        hasGPUDeviceType = true;
+    }
     else if (cli.hasShortOption('A'))
+    {
         gpuDeviceType = getLowestGPUDeviceTypeFromArchitecture(
                     getGPUArchitectureFromName(cli.getShortOptArg<const char*>('A')));
+        hasGPUDeviceType = true;
+    }
     
     cxuint driverVersion = 0;
     if (cli.hasShortOption('t'))
@@ -184,7 +194,8 @@ try
                 {
                     // ROCm binary
                     ROCmBinary rocmBin(binaryData.size(), binaryData.data(), 0);
-                    Disassembler disasm(rocmBin, std::cout, disasmFlags);
+                    Disassembler disasm(rocmBin, std::cout, hasGPUDeviceType, gpuDeviceType,
+                                        disasmFlags);
                     disasm.disassemble();
                 }
                 else

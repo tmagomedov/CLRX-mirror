@@ -542,6 +542,17 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
         "test.s:1:4: Error: SEXT modifiers is unavailable for DPP word\n" },
     { "   v_cndmask_b32  v154, 12333, v107, vcc bank_mask:0 row_mask:0", 0, 0,
         false, false, "test.s:1:4: Error: Literal with SDWA or DPP word is illegal\n" },
+    /* VOP DPP illegal */
+    { "   v_rsq_f64 v[2:3], v[6:7] bank_mask:4 row_mask:2", 0, 0,
+        false, false, "test.s:1:4: Error: DPP encoding is illegal for this instruction\n" },
+    { "    v_madmk_f32 v154, v21, 45543, v107  bank_mask:4 row_mask:2", 0, 0,
+        false, false, "test.s:1:5: Error: Literal with SDWA or DPP word is illegal\n" },
+    { "   v_sqrt_f64 v[2:3], v[6:7] bank_mask:4 row_mask:2", 0, 0,
+        false, false, "test.s:1:4: Error: DPP encoding is illegal for this instruction\n" },
+    { "   v_clrexcp bank_mask:4 row_mask:2", 0, 0, false, false,
+        "test.s:1:4: Error: SRC0 must be a vector register with SDWA or DPP word\n" },
+    { "   v_cmp_lt_f64 vcc, v[4:5], v[16:17] bank_mask:4 row_mask:2", 0, 0, false, false,
+        "test.s:1:4: Error: DPP encoding is illegal for this instruction\n" },
     /* VOP_SDWA and VOP_DPP mixing errors */
     { "   v_cndmask_b32  v154, v190, v107, vcc row_shl:3 clamp ", 0, 0, false, false,
         "test.s:1:41: Error: Mixing modifiers from different encodings is illegal\n" },
@@ -625,6 +636,12 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
     { "    v_xor_b32  v55, s27, v90 vop3", 0xd1150037U, 0x0002b41bU, true, true, "" },
     { "    v_mac_f32  v154, v21, v107", 0x2d34d715U, 0, false, true, "" },
     { "    v_mac_f32  v55, s27, v90 vop3", 0xd1160037U, 0x0002b41bU, true, true, "" },
+    // SDWA legal
+    { "    v_mac_f32  v55, v27, v90 dst_sel:b0 src0_sel:b1",
+        0x2c6eb4f9, 0x601001b, true, true, "" },
+    { "    v_mac_f16  v55, v27, v90 dst_sel:b0 src0_sel:b1",
+        0x466eb4f9, 0x601001b, true, true, "" },
+    //
     { "    v_madmk_f32 v154, v21, 6.9551627e+13, v107",
         0x2f34d715U, 0x567d0700U, true, true, "" },
     { "    v_madmk_f32 v154, v21, 45543, v107", 0x2f34d715U, 45543, true, true, "" },
@@ -648,6 +665,12 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
     { "    v_addc_u32  v154, vcc, v21, v107, vcc", 0x3934d715U, 0, false, true, "" },
     { "    v_subb_u32  v154, vcc, v21, v107, vcc", 0x3b34d715U, 0, false, true, "" },
     { "    v_subbrev_u32  v154, vcc, v21, v107, vcc", 0x3d34d715U, 0, false, true, "" },
+    { "    v_addc_u32  v154, s[10:11], v21, v107, s[6:7]",
+        0xd11c0a9aU, 0x001ad715, true, true, "" },
+    { "    v_subb_u32  v154, s[10:11], v21, v107, s[6:7]",
+        0xd11d0a9aU, 0x001ad715, true, true, "" },
+    { "    v_subbrev_u32  v154, s[10:11], v21, v107, s[6:7]",
+        0xd11e0a9aU, 0x001ad715, true, true, "" },
     { "    v_add_f16  v154, v21, v107", 0x3f34d715U, 0, false, true, "" },
     { "    v_add_f16  v154, 1.374, v107", 0x3f34d6ffU, 0x3d7f, true, true, "" },
     { "    v_add_f16  v55, s27, v90 vop3", 0xd11f0037U, 0x0002b41bU, true, true, "" },
@@ -710,6 +733,9 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
         "test.s:1:5: Error: SRC0 must be a vector register with SDWA or DPP word\n" },
     { "    v_mov_b32  v158, v79 dst_sel:w1 mul:2", 0, 0, false, false,
         "test.s:1:26: Error: Mixing modifiers from different encodings is illegal\n" },
+    /* VOP1 - SDWA illegal */
+    { "    v_readfirstlane_b32 s30, s79 dst_sel:w1 src0_sel:b2", 0, 0, false, false,
+        "test.s:1:5: Error: SRC0 must be a vector register with SDWA or DPP word\n" },
     /* VOP1 - DPP */
     { "    v_mov_b32  v158, v79 quad_perm:[1,2,3,0] bound_ctrl row_mask:4 bank_mask:5",
         0x7f3c02faU, 0x4508394fU, true, true, "" },
@@ -1270,6 +1296,8 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
     /* MUBUF errors */
     { "    buffer_load_format_x v61, v18, s[80:83], s35 idxen offset:603 addr",
         0, 0, false, false, "test.s:1:67: Error: Unknown MUBUF modifier\n" },
+    { "    buffer_load_format_x v61, v18, s[80:83], s35 idxen offset:603 addr64",
+        0, 0, false, false, "test.s:1:67: Error: Unknown MUBUF modifier\n" },
     { "    buffer_load_format_x v61, v18, s[80:83], 3435 idxen offset:603",
         0, 0, false, false, "test.s:1:46: Error: Literal in MUBUF is illegal\n" },
     { "    buffer_load_format_x v61, v18, s[80:83], xx idxen offset:603",
@@ -1455,6 +1483,10 @@ const GCNAsmOpcodeCase encGCN12OpcodeCases[] =
         0xf048fb00U, 0x00159d79U, true, true, "" },
     { "    image_atomic_sub  v[157:159], v[121:124], s[84:87] dmask:11 unorm glc r128 da",
         0xf04cfb00U, 0x00159d79U, true, true, "" },
+    { "image_load      v[157:160], v[121:124], s[84:91] dmask:15 glc slc lwe da d16\n",
+        0xf2026f00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:161], v[121:124], s[84:91] dmask:15 glc slc lwe da d16 tfe\n",
+        0xf2036f00U, 0x80159d79U, true, true, "" },
     /* MIMG uknown instructions */
     { "    image_atomic_fcmpswap  v[157:159], v[121:124], s[84:87] dmask:11 unorm "
         "glc r128 da", 0, 0, false, false, "test.s:1:5: Error: Unknown instruction\n" },

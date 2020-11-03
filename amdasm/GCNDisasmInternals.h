@@ -43,14 +43,16 @@ struct CLRX_INTERNAL GCNDisasmUtils
 {
     typedef GCNDisassembler::RelocIter RelocIter;
     static void printLiteral(GCNDisassembler& dasm, size_t codePos, RelocIter& relocIter,
-              uint32_t literal, FloatLitType floatLit, bool optional);
+              uint32_t literal, FloatLitType floatLit, bool optional,
+              bool useSRMDLit = false);
     // decode GCN operand (version without literal)
     static void decodeGCNOperandNoLit(GCNDisassembler& dasm, cxuint op, cxuint regNum,
               char*& bufPtr, GPUArchMask arch, FloatLitType floatLit = FLTLIT_NONE);
     // decodee GCN operand (include literal, can decode relocations)
     static char* decodeGCNOperand(GCNDisassembler& dasm, size_t codePos,
               RelocIter& relocIter, cxuint op, cxuint regNum, GPUArchMask arch,
-              uint32_t literal = 0, FloatLitType floatLit = FLTLIT_NONE);
+              uint32_t literal = 0, FloatLitType floatLit = FLTLIT_NONE,
+              bool useSMRDLit = false);
     
     static void decodeSOPCEncoding(GCNDisassembler& dasm,
              size_t codePos, RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
@@ -72,8 +74,10 @@ struct CLRX_INTERNAL GCNDisasmUtils
              size_t codePos, RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
              const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal);
     
-    static void decodeSMRDEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
-            GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode);
+    static void decodeSMRDEncoding(GCNDisassembler& dasm,
+            size_t codePos, RelocIter& relocIter, cxuint spacesToAdd,
+            GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+            uint32_t literal);
     
     static void decodeSMEMEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
             GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
@@ -82,7 +86,7 @@ struct CLRX_INTERNAL GCNDisasmUtils
     static void decodeVOPCEncoding(GCNDisassembler& dasm,
              size_t codePos, RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
              const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal,
-             FloatLitType displayFloatLits);
+             FloatLitType displayFloatLits, Flags flags);
     
     static void decodeVOP1Encoding(GCNDisassembler& dasm,
              size_t codePos, RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
@@ -92,11 +96,13 @@ struct CLRX_INTERNAL GCNDisasmUtils
     static void decodeVOP2Encoding(GCNDisassembler& dasm,
              size_t codePos, RelocIter& relocIter, cxuint spacesToAdd, GPUArchMask arch,
              const GCNInstruction& gcnInsn, uint32_t insnCode, uint32_t literal,
-             FloatLitType displayFloatLits);
+             FloatLitType displayFloatLits, Flags flags);
     
-    static void decodeVOP3Encoding(GCNDisassembler& dasm, cxuint spacesToAdd,
+    static void decodeVOP3Encoding(GCNDisassembler& dasm, size_t codePos,
+            RelocIter& relocIter, cxuint spacesToAdd,
             GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
-            uint32_t insnCode2, FloatLitType displayFloatLits);
+            uint32_t insnCode2, uint32_t literal, FloatLitType displayFloatLits,
+            Flags flags);
     
     static void decodeVINTRPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
              GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode);
@@ -112,12 +118,17 @@ struct CLRX_INTERNAL GCNDisasmUtils
     static void decodeMIMGEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
              GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
              uint32_t insnCode2);
+    static void decodeMIMGEncodingGFX10(GCNDisassembler& dasm, cxuint spacesToAdd,
+             GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
+             uint32_t insnCode2, uint32_t insnCode3, uint32_t insnCode4,
+             uint32_t insnCode5);
     
     static void decodeEXPEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
              GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,
              uint32_t insnCode2);
 
-    static void printFLATAddr(cxuint flatMode, char*& bufPtr, uint32_t insnCode2);
+    static void printFLATAddr(cxuint flatMode, char*& bufPtr, uint32_t insnCode2,
+                              cxuint nullCode);
     
     static void decodeFLATEncoding(GCNDisassembler& dasm, cxuint spacesToAdd,
              GPUArchMask arch, const GCNInstruction& gcnInsn, uint32_t insnCode,

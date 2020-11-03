@@ -438,6 +438,8 @@
             <item>src_private_limit</item>
             <item>pops_exiting_wave_id</item>
             <item>src_pops_exiting_wave_id</item>
+            <item>null</item>
+            <item>lds</item>
         </list>
         <list name="Instructions">
             <item>buffer_atomic_add</item>
@@ -474,6 +476,8 @@
             <item>buffer_atomic_umin_x2</item>
             <item>buffer_atomic_xor</item>
             <item>buffer_atomic_xor_x2</item>
+            <item>buffer_gl0_inv</item>
+            <item>buffer_gl1_inv</item>
             <item>buffer_load_dword</item>
             <item>buffer_load_dwordx2</item>
             <item>buffer_load_dwordx3</item>
@@ -736,6 +740,12 @@
             <item>global_atomic_cmpswap_x2</item>
             <item>global_atomic_dec</item>
             <item>global_atomic_dec_x2</item>
+            <item>global_atomic_fcmpswap</item>
+            <item>global_atomic_fcmpswap_x2</item>
+            <item>global_atomic_fmax</item>
+            <item>global_atomic_fmax_x2</item>
+            <item>global_atomic_fmin</item>
+            <item>global_atomic_fmin_x2</item>
             <item>global_atomic_inc</item>
             <item>global_atomic_inc_x2</item>
             <item>global_atomic_or</item>
@@ -880,12 +890,17 @@
             <item>s_addk_i32</item>
             <item>s_and_b32</item>
             <item>s_and_b64</item>
+            <item>s_and_saveexec_b32</item>
             <item>s_and_saveexec_b64</item>
+            <item>s_andn1_saveexec_b32</item>
             <item>s_andn1_saveexec_b64</item>
+            <item>s_andn1_wrexec_b32</item>
             <item>s_andn1_wrexec_b64</item>
             <item>s_andn2_b32</item>
             <item>s_andn2_b64</item>
+            <item>s_andn2_saveexec_b32</item>
             <item>s_andn2_saveexec_b64</item>
+            <item>s_andn2_wrexec_b32</item>
             <item>s_andn2_wrexec_b64</item>
             <item>s_ashr_i32</item>
             <item>s_ashr_i64</item>
@@ -988,6 +1003,7 @@
             <item>s_cbranch_scc1</item>
             <item>s_cbranch_vccnz</item>
             <item>s_cbranch_vccz</item>
+            <item>s_clause</item>
             <item>s_cmov_b32</item>
             <item>s_cmov_b64</item>
             <item>s_cmovk_i32</item>
@@ -1018,6 +1034,7 @@
             <item>s_cmpk_lg_u32</item>
             <item>s_cmpk_lt_i32</item>
             <item>s_cmpk_lt_u32</item>
+            <item>s_code_end</item>
             <item>s_cselect_b32</item>
             <item>s_cselect_b64</item>
             <item>s_dcache_discard</item>
@@ -1027,6 +1044,7 @@
             <item>s_dcache_wb</item>
             <item>s_dcache_wb_vol</item>
             <item>s_decperflevel</item>
+            <item>s_denorm_mode</item>
             <item>s_endpgm</item>
             <item>s_endpgm_ordered_ps_done</item>
             <item>s_endpgm_saved</item>
@@ -1038,11 +1056,14 @@
             <item>s_flbit_i32_b32</item>
             <item>s_flbit_i32_b64</item>
             <item>s_flbit_i32_i64</item>
+            <item>s_get_waveid_in_workgroup</item>
             <item>s_getpc_b64</item>
             <item>s_getreg_b32</item>
             <item>s_getreg_regrd_b32</item>
+            <item>s_gl1_inv</item>
             <item>s_icache_inv</item>
             <item>s_incperflevel</item>
+            <item>s_inst_prefetch</item>
             <item>s_load_dword</item>
             <item>s_load_dwordx16</item>
             <item>s_load_dwordx2</item>
@@ -1071,25 +1092,31 @@
             <item>s_movreld_b64</item>
             <item>s_movrels_b32</item>
             <item>s_movrels_b64</item>
+            <item>s_movrelsd_2_b32</item>
             <item>s_mul_hi_i32</item>
             <item>s_mul_hi_u32</item>
             <item>s_mul_i32</item>
             <item>s_mulk_i32</item>
             <item>s_nand_b32</item>
             <item>s_nand_b64</item>
+            <item>s_nand_saveexec_b32</item>
             <item>s_nand_saveexec_b64</item>
             <item>s_nop</item>
             <item>s_nor_b32</item>
             <item>s_nor_b64</item>
+            <item>s_nor_saveexec_b32</item>
             <item>s_nor_saveexec_b64</item>
             <item>s_not_b32</item>
             <item>s_not_b64</item>
             <item>s_or_b32</item>
             <item>s_or_b64</item>
+            <item>s_or_saveexec_b32</item>
             <item>s_or_saveexec_b64</item>
+            <item>s_orn1_saveexec_b32</item>
             <item>s_orn1_saveexec_b64</item>
             <item>s_orn2_b32</item>
             <item>s_orn2_b64</item>
+            <item>s_orn2_saveexec_b32</item>
             <item>s_orn2_saveexec_b64</item>
             <item>s_pack_hh_b32_b16</item>
             <item>s_pack_lh_b32_b16</item>
@@ -1098,6 +1125,7 @@
             <item>s_quadmask_b64</item>
             <item>s_rfe_b64</item>
             <item>s_rfe_restore_b64</item>
+            <item>s_round_mode</item>
             <item>s_scratch_load_dword</item>
             <item>s_scratch_load_dwordx2</item>
             <item>s_scratch_load_dwordx4</item>
@@ -1126,18 +1154,30 @@
             <item>s_sub_i32</item>
             <item>s_sub_u32</item>
             <item>s_subb_u32</item>
+            <item>s_subvector_loop_begin</item>
+            <item>s_subvector_loop_end</item>
             <item>s_swappc_b64</item>
             <item>s_trap</item>
             <item>s_ttracedata</item>
+            <item>s_ttracedata_imm</item>
+            <item>s_version</item>
+            <item>s_wait_idle</item>
             <item>s_waitcnt</item>
+            <item>s_waitcnt_decptr</item>
+            <item>s_waitcnt_expcnt</item>
+            <item>s_waitcnt_lgkmcnt</item>
+            <item>s_waitcnt_vmcnt</item>
+            <item>s_waitcnt_vscnt</item>
             <item>s_wakeup</item>
             <item>s_wqm_b32</item>
             <item>s_wqm_b64</item>
             <item>s_xnor_b32</item>
             <item>s_xnor_b64</item>
+            <item>s_xnor_saveexec_b32</item>
             <item>s_xnor_saveexec_b64</item>
             <item>s_xor_b32</item>
             <item>s_xor_b64</item>
+            <item>s_xor_saveexec_b32</item>
             <item>s_xor_saveexec_b64</item>
             <item>scratch_load_dword</item>
             <item>scratch_load_dwordx2</item>
@@ -1178,6 +1218,7 @@
             <item>tbuffer_store_format_xyz</item>
             <item>tbuffer_store_format_xyzw</item>
             <item>v_add3_u32</item>
+            <item>v_add_co_ci_u32</item>
             <item>v_add_co_u32</item>
             <item>v_add_f16</item>
             <item>v_add_f32</item>
@@ -1185,6 +1226,10 @@
             <item>v_add_i16</item>
             <item>v_add_i32</item>
             <item>v_add_lshl_u32</item>
+            <item>v_add_nc_i16</item>
+            <item>v_add_nc_i32</item>
+            <item>v_add_nc_u16</item>
+            <item>v_add_nc_u32</item>
             <item>v_add_u16</item>
             <item>v_add_u32</item>
             <item>v_addc_co_u32</item>
@@ -1573,7 +1618,10 @@
             <item>v_fma_f32</item>
             <item>v_fma_f64</item>
             <item>v_fma_legacy_f16</item>
+            <item>v_fmaak_f16</item>
+            <item>v_fmac_f16</item>
             <item>v_fmac_f32</item>
+            <item>v_fmamk_f16</item>
             <item>v_fract_f16</item>
             <item>v_fract_f32</item>
             <item>v_fract_f64</item>
@@ -1675,6 +1723,7 @@
             <item>v_mov_prsv_b32</item>
             <item>v_movreld_b32</item>
             <item>v_movrels_b32</item>
+            <item>v_movrelsd_2_b32</item>
             <item>v_movrelsd_b32</item>
             <item>v_mqsad_pk_u16_u8</item>
             <item>v_mqsad_u32_u8</item>
@@ -1700,11 +1749,15 @@
             <item>v_or_b32</item>
             <item>v_pack_b32_f16</item>
             <item>v_perm_b32</item>
+            <item>v_permlane16_b32</item>
+            <item>v_permlanex16_b32</item>
+            <item>v_pipeflush</item>
             <item>v_pk_add_f16</item>
             <item>v_pk_add_i16</item>
             <item>v_pk_add_u16</item>
             <item>v_pk_ashrrev_i16</item>
             <item>v_pk_fma_f16</item>
+            <item>v_pk_fmac_f16</item>
             <item>v_pk_lshlrev_b16</item>
             <item>v_pk_lshrrev_b16</item>
             <item>v_pk_mad_i16</item>
@@ -1751,24 +1804,32 @@
             <item>v_sqrt_f16</item>
             <item>v_sqrt_f32</item>
             <item>v_sqrt_f64</item>
+            <item>v_sub_co_ci_u32</item>
             <item>v_sub_co_u32</item>
             <item>v_sub_f16</item>
             <item>v_sub_f32</item>
             <item>v_sub_i16</item>
             <item>v_sub_i32</item>
+            <item>v_sub_nc_i16</item>
+            <item>v_sub_nc_i32</item>
+            <item>v_sub_nc_u16</item>
+            <item>v_sub_nc_u32</item>
             <item>v_sub_u16</item>
             <item>v_sub_u32</item>
             <item>v_subb_co_u32</item>
             <item>v_subb_u32</item>
             <item>v_subbrev_co_u32</item>
             <item>v_subbrev_u32</item>
+            <item>v_subrev_co_ci_u32</item>
             <item>v_subrev_co_u32</item>
             <item>v_subrev_f16</item>
             <item>v_subrev_f32</item>
             <item>v_subrev_i32</item>
+            <item>v_subrev_nc_u32</item>
             <item>v_subrev_u16</item>
             <item>v_subrev_u32</item>
             <item>v_swap_b32</item>
+            <item>v_swaprel_b32</item>
             <item>v_trig_preop_f64</item>
             <item>v_trunc_f16</item>
             <item>v_trunc_f32</item>
@@ -1777,6 +1838,7 @@
             <item>v_writelane_regwr_b32</item>
             <item>v_xad_u32</item>
             <item>v_xnor_b32</item>
+            <item>v_xor3_b32</item>
             <item>v_xor_b32</item>
         </list>
         <list name="PseudoOps">
@@ -1787,6 +1849,7 @@
             <item>.align</item>
             <item>.altmacro</item>
             <item>.amd</item>
+            <item>.amd3</item>
             <item>.amdcl2</item>
             <item>.arch</item>
             <item>.arch_minor</item>
@@ -1902,6 +1965,7 @@
             <item>.gotsym</item>
             <item>.gpu</item>
             <item>.group_segment_align</item>
+            <item>.group_segment_fixed_size</item>
             <item>.half</item>
             <item>.header</item>
             <item>.hsa_debugmode</item>
@@ -1970,6 +2034,7 @@
             <item>.kernel_code_prefetch_size</item>
             <item>.lflags</item>
             <item>.line</item>
+            <item>.llvm10binfmt</item>
             <item>.llvm_version</item>
             <item>.ln</item>
             <item>.local</item>
@@ -1992,11 +2057,13 @@
             <item>.md_vgprsnum</item>
             <item>.md_wavefront_size</item>
             <item>.metadata</item>
+            <item>.metadatav3</item>
             <item>.newbinfmt</item>
             <item>.noaltmacro</item>
             <item>.nobuggyfplit</item>
             <item>.nomacrocase</item>
             <item>.nosectdiffs</item>
+            <item>.nowave32</item>
             <item>.octa</item>
             <item>.offset</item>
             <item>.org</item>
@@ -2005,12 +2072,14 @@
             <item>.persistentbuffers</item>
             <item>.pgmrsrc1</item>
             <item>.pgmrsrc2</item>
+            <item>.pgmrsrc3</item>
             <item>.policy</item>
             <item>.print</item>
             <item>.printfid</item>
             <item>.priority</item>
             <item>.private_elem_size</item>
             <item>.private_segment_align</item>
+            <item>.private_segment_fixed_size</item>
             <item>.privateid</item>
             <item>.privmode</item>
             <item>.proginfo</item>
@@ -2043,6 +2112,7 @@
             <item>.setup</item>
             <item>.setupargs</item>
             <item>.sgprsnum</item>
+            <item>.shared_vgprs</item>
             <item>.short</item>
             <item>.single</item>
             <item>.size</item>
@@ -2096,6 +2166,7 @@
             <item>.version</item>
             <item>.vgprsnum</item>
             <item>.warning</item>
+            <item>.wave32</item>
             <item>.wavefront_sgpr_count</item>
             <item>.wavefront_size</item>
             <item>.weak</item>

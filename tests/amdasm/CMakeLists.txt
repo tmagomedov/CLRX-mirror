@@ -23,7 +23,8 @@ ADD_EXECUTABLE(GCNDisasmOpcodes
         GCNDisasmOpcodes.cpp
         GCNDisasmOpc11.cpp
         GCNDisasmOpc12.cpp
-        GCNDisasmOpc14.cpp)
+        GCNDisasmOpc14.cpp
+        GCNDisasmOpc15.cpp)
 TEST_LINK_LIBRARIES(GCNDisasmOpcodes CLRXAmdAsm CLRXAmdBin CLRXUtils)
 ADD_TEST(GCNDisasmOpcodes GCNDisasmOpcodes)
 
@@ -65,7 +66,8 @@ ADD_EXECUTABLE(GCNAsmOpcodes
         GCNAsmOpcodes.cpp
         GCNAsmOpc11.cpp
         GCNAsmOpc12.cpp
-        GCNAsmOpc14.cpp)
+        GCNAsmOpc14.cpp
+        GCNAsmOpc15.cpp)
 TEST_LINK_LIBRARIES(GCNAsmOpcodes CLRXAmdAsm CLRXAmdBin CLRXUtils)
 ADD_TEST(GCNAsmOpcodes GCNAsmOpcodes)
 

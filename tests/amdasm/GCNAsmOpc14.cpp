@@ -22,6 +22,9 @@
 
 const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
 {
+    /* GCN 1.2 flat scratch */
+    { "    s_add_u32  flat_scratch_lo, s4, s61", 0x80663d04U, 0, false, true, "" },
+    { "    s_add_u32  flat_scratch_hi, s4, s61", 0x80673d04U, 0, false, true, "" },
     /* extra scalar registers */
     { "s_add_u32 s21, shared_base, s61\n", 0x80153debU, 0, false, true, "" },
     { "s_add_u32 s21, src_shared_base, s61\n", 0x80153debU, 0, false, true, "" },
@@ -139,6 +142,18 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     { "    s_getreg_b32    s43, hwreg(sq_shader_tma_hi, 0, 1)",
                 0xb8ab0013U, 0, false, true, "" },
     { "    s_getreg_b32    s43, hwreg(HWREG_SQ_SHADER_TMA_HI, 0, 1)",
+                0xb8ab0013U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(tba_lo, 0, 1)", 0xb8ab0010U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(HWREG_TBA_LO, 0, 1)",
+                0xb8ab0010U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(tba_hi, 0, 1)", 0xb8ab0011U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(HWREG_TBA_HI, 0, 1)",
+                0xb8ab0011U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(tma_lo, 0, 1)", 0xb8ab0012U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(HWREG_TMA_LO, 0, 1)",
+                0xb8ab0012U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(tma_hi, 0, 1)", 0xb8ab0013U, 0, false, true, "" },
+    { "    s_getreg_b32    s43, hwreg(HWREG_TMA_HI, 0, 1)",
                 0xb8ab0013U, 0, false, true, "" },
     /* message types */
     { "    s_sendmsg  sendmsg(interrupt)", 0xbf900001U, 0, false, true, "" },
@@ -320,6 +335,11 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
     { "v_cmp_class_f32 vcc, sext(-abs(v65)), v107 clamp",
         0, 0, false, false,
         "test.s:1:1: Error: Modifiers CLAMP and OMOD is illegal in SDWAB\n" },
+    // SDWA illegal
+    { "    v_mac_f32  v55, v27, v90 dst_sel:b0 src0_sel:b1", 0, 0, false, false,
+        "test.s:1:5: Error: SDWA encoding is illegal for this instruction\n" },
+    { "    v_mac_f16  v55, v27, v90 dst_sel:b0 src0_sel:b1", 0, 0, false, false,
+        "test.s:1:5: Error: SDWA encoding is illegal for this instruction\n" },
     /* VOP2 instructions */
     { "v_add_co_u32    v154, vcc, v21, v107\n", 0x3334d715U, 0, false, true, "" },
     { "v_sub_co_u32    v154, vcc, v21, v107\n", 0x3534d715U, 0, false, true, "" },
@@ -636,6 +656,8 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
         0xd8b2cd67U, 0x8b000047U, true, true, "" },
     { "ds_read_u16_d16 v139, v71 offset:52583\n",
         0xd8b4cd67U, 0x8b000047U, true, true, "" },
+    { "ds_read_u16_d16_hi v139, v71 offset:52583\n",
+        0xd8b6cd67U, 0x8b000047U, true, true, "" },
     { "ds_read_addtid_b32 v139 offset:52583\n", 0xd96ccd67U, 0x8b000000U, true, true, "" },
     /* MUBUF instructions */
     { "buffer_store_byte_d16_hi v61, v[18:19], s[80:83], s35 offen idxen "
@@ -701,10 +723,47 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
         "unorm glc a16 da\n", 0xf128fb00U, 0x00159d79U, true, true, "" },
     { "image_gather8h_pck v[157:160], v[121:124], s[84:91], s[0:3] dmask:11 "
         "unorm glc a16 da\n", 0xf12cfb00U, 0x00159d79U, true, true, "" },
+    { "        image_load      v[157:160], v[121:124], s[84:91] dmask:15 "
+        "glc slc lwe da\n", 0xf2026f00U, 0x00159d79U, true, true, "" },
+    // DMASK D16
+    { "image_load      v157, v[121:124], s[84:91] dmask:1 glc slc lwe da d16\n",
+        0xf2026100U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:2 glc slc lwe da d16\n",
+        0xf2026200U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:3 glc slc lwe da d16\n",
+        0xf2026300U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:4 glc slc lwe da d16\n",
+        0xf2026400U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:5 glc slc lwe da d16\n",
+        0xf2026500U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:6 glc slc lwe da d16\n",
+        0xf2026600U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:158], v[121:124], s[84:91] dmask:7 glc slc lwe da d16\n",
+        0xf2026700U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:8 glc slc lwe da d16\n",
+        0xf2026800U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:9 glc slc lwe da d16\n",
+        0xf2026900U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v[121:124], s[84:91] dmask:10 glc slc lwe da d16\n",
+        0xf2026a00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:158], v[121:124], s[84:91] dmask:11 glc slc lwe da d16\n",
+        0xf2026b00U, 0x80159d79U, true, true, "" },
+    { "image_load      v157, v121, s[84:91] dmask:12 glc slc lwe da d16\n",
+        0xf2026c00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:158], v[121:124], s[84:91] dmask:13 glc slc lwe da d16\n",
+        0xf2026d00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:158], v[121:124], s[84:91] dmask:14 glc slc lwe da d16\n",
+        0xf2026e00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:158], v[121:124], s[84:91] dmask:15 glc slc lwe da d16\n",
+        0xf2026f00U, 0x80159d79U, true, true, "" },
+    { "image_load      v[157:159], v[121:124], s[84:91] dmask:15 glc slc lwe da d16 tfe\n",
+        0xf2036f00U, 0x80159d79U, true, true, "" },
     /* FLAT encoding */
     { "flat_load_ubyte v47, v[187:188] nv\n", 0xdc400000U, 0x2f8000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188]\n", 0xdc400000U, 0x2f0000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188] inst_offset:529\n",
+        0xdc400211U, 0x2f0000bbU, true, true, "" },
+    { "flat_load_ubyte v47, v[187:188] offset:529\n",
         0xdc400211U, 0x2f0000bbU, true, true, "" },
     { "flat_load_ubyte v47, v[187:188] inst_offset:zzz\nzzz=529\n",
         0xdc400211U, 0x2f0000bbU, true, true, "" },
@@ -857,6 +916,8 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
         0xdd078000U, 0x2f3241bbU, true, true, "" },
     { "global_atomic_add v47, v187, v65, s[50:51] glc slc\n",
         0xdd0b8000U, 0x2f3241bbU, true, true, "" },
+    { "global_atomic_add v187, v65, s[50:51] slc\n",
+        0xdd0a8000U, 0x003241bbU, true, true, "" }, // no dst
     { "global_atomic_sub v47, v187, v65, s[50:51] glc slc\n",
         0xdd0f8000U, 0x2f3241bbU, true, true, "" },
     { "global_atomic_smin v47, v187, v65, s[50:51] glc slc\n",
@@ -914,6 +975,10 @@ const GCNAsmOpcodeCase encGCN14OpcodeCases[] =
 
 const GCNAsmOpcodeCase encGCN141OpcodeCases[] =
 {
+    /* GCN 1.2 flat scratch */
+    { "    s_add_u32  flat_scratch_lo, s4, s61", 0x80663d04U, 0, false, true, "" },
+    { "    s_add_u32  flat_scratch_hi, s4, s61", 0x80673d04U, 0, false, true, "" },
+    //
     { "v_mad_mix_f32   v55, v79, v166, v229\n", 0xd3a04037U, 0x1f974d4fU, true, true, "" },
     { "v_mad_mixlo_f16 v55, v79, v166, v229\n", 0xd3a14037U, 0x1f974d4fU, true, true, "" },
     { "v_mad_mixhi_f16 v55, v79, v166, v229\n", 0xd3a24037U, 0x1f974d4fU, true, true, "" },

@@ -390,13 +390,21 @@ CLAsmSetup CLRX::assemblerSetupForCLDevice(cl_device_id clDevice, Flags flags,
                 { sptr++; /* not found skip this '(' */ }
             }
         }
+        else if (binaryFormat==BinaryFormat::ROCM)
+        {
+            size_t index = strcspn(devNamePtr, "+-");
+            if (index==0)
+                throw;
+            CString tdevName(devNamePtr, devNamePtr+index);
+            devType = getGPUDeviceTypeFromName(tdevName.c_str());
+        }
         else
             throw;
     }
     /* change binary format to AMDCL2 if default for this driver version and 
      * architecture >= GCN 1.1 */
     bool useLegacy = false;
-    if (defaultCL2ForDriver &&
+    if (defaultCL2ForDriver && binaryFormat != BinaryFormat::ROCM &&
         getGPUArchitectureFromDeviceType(devType) >= GPUArchitecture::GCN1_1)
     {
         if (useCL!=1) // if not cl1/old

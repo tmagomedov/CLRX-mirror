@@ -43,30 +43,31 @@ static const char* rocmPseudoOpNamesTbl[] =
     "debugmode", "default_hsa_features", "dims", "dx10clamp",
     "eflags", "exceptions", "fixed_work_group_size",
     "fkernel", "floatmode", "gds_segment_size",
-    "globaldata", "gotsym", "group_segment_align", "ieeemode", "kcode",
+    "globaldata", "gotsym", "group_segment_align",
+    "group_segment_fixed_size", "ieeemode", "kcode",
     "kcodeend", "kernarg_segment_align",
     "kernarg_segment_size", "kernel_code_entry_offset",
     "kernel_code_prefetch_offset", "kernel_code_prefetch_size",
-    "localsize", "machine",
+    "llvm10binfmt", "localsize", "machine",
     "max_flat_work_group_size", "max_scratch_backing_memory",
     "md_group_segment_fixed_size", "md_kernarg_segment_align",
     "md_kernarg_segment_size", "md_language","md_private_segment_fixed_size",
     "md_sgprsnum", "md_symname", "md_version",
     "md_vgprsnum", "md_wavefront_size",
-    "metadata", "newbinfmt", "nosectdiffs",
-    "pgmrsrc1", "pgmrsrc2", "printf", "priority",
+    "metadata", "metadatav3", "newbinfmt", "nosectdiffs",
+    "pgmrsrc1", "pgmrsrc2", "pgmrsrc3", "printf", "priority",
     "private_elem_size", "private_segment_align",
-    "privmode", "reqd_work_group_size",
+    "private_segment_fixed_size", "privmode", "reqd_work_group_size",
     "reserved_sgprs", "reserved_vgprs",
     "runtime_handle", "runtime_loader_kernel_symbol",
-    "scratchbuffer", "sgprsnum",
+    "scratchbuffer", "sgprsnum", "shared_vgprs",
     "spilledsgprs", "spilledvgprs", "target", "tgsize", "tripple",
     "use_debug_enabled", "use_dispatch_id",
     "use_dispatch_ptr", "use_dynamic_call_stack",
     "use_flat_scratch_init", "use_grid_workgroup_count",
     "use_kernarg_segment_ptr", "use_ordered_append_gds",
     "use_private_segment_buffer", "use_private_segment_size",
-    "use_ptr64", "use_queue_ptr", "use_xnack_enabled",
+    "use_ptr64", "use_queue_ptr", "use_wave32", "use_xnack_enabled",
     "userdatanum", "vectypehint", "vgprsnum", "wavefront_sgpr_count",
     "wavefront_size", "work_group_size_hint", "workgroup_fbarrier_count",
     "workgroup_group_segment_size", "workitem_private_segment_size",
@@ -83,35 +84,49 @@ enum
     ROCMOP_DEBUGMODE, ROCMOP_DEFAULT_HSA_FEATURES, ROCMOP_DIMS, ROCMOP_DX10CLAMP,
     ROCMOP_EFLAGS, ROCMOP_EXCEPTIONS, ROCMOP_FIXED_WORK_GROUP_SIZE, ROCMOP_FKERNEL,
     ROCMOP_FLOATMODE, ROCMOP_GDS_SEGMENT_SIZE, ROCMOP_GLOBALDATA, ROCMOP_GOTSYM,
-    ROCMOP_GROUP_SEGMENT_ALIGN, ROCMOP_IEEEMODE, ROCMOP_KCODE,
+    ROCMOP_GROUP_SEGMENT_ALIGN, ROCMOP_GROUP_SEGMENT_FIXED_SIZE,
+    ROCMOP_IEEEMODE, ROCMOP_KCODE,
     ROCMOP_KCODEEND, ROCMOP_KERNARG_SEGMENT_ALIGN,
     ROCMOP_KERNARG_SEGMENT_SIZE, ROCMOP_KERNEL_CODE_ENTRY_OFFSET,
     ROCMOP_KERNEL_CODE_PREFETCH_OFFSET, ROCMOP_KERNEL_CODE_PREFETCH_SIZE,
-    ROCMOP_LOCALSIZE, ROCMOP_MACHINE,
+    ROCMOP_LLVM10BINFMT, ROCMOP_LOCALSIZE, ROCMOP_MACHINE,
     ROCMOP_MAX_FLAT_WORK_GROUP_SIZE, ROCMOP_MAX_SCRATCH_BACKING_MEMORY,
     ROCMOP_MD_GROUP_SEGMENT_FIXED_SIZE, ROCMOP_MD_KERNARG_SEGMENT_ALIGN,
     ROCMOP_MD_KERNARG_SEGMENT_SIZE, ROCMOP_MD_LANGUAGE,
     ROCMOP_MD_PRIVATE_SEGMENT_FIXED_SIZE, ROCMOP_MD_SGPRSNUM,
     ROCMOP_MD_SYMNAME, ROCMOP_MD_VERSION, ROCMOP_MD_VGPRSNUM, ROCMOP_MD_WAVEFRONT_SIZE,
-    ROCMOP_METADATA, ROCMOP_NEWBINFMT, ROCMOP_NOSECTDIFFS,
-    ROCMOP_PGMRSRC1, ROCMOP_PGMRSRC2, ROCMOP_PRINTF,
+    ROCMOP_METADATA, ROCMOP_METADATAV3, ROCMOP_NEWBINFMT, ROCMOP_NOSECTDIFFS,
+    ROCMOP_PGMRSRC1, ROCMOP_PGMRSRC2, ROCMOP_PGMRSRC3, ROCMOP_PRINTF,
     ROCMOP_PRIORITY, ROCMOP_PRIVATE_ELEM_SIZE, ROCMOP_PRIVATE_SEGMENT_ALIGN,
-    ROCMOP_PRIVMODE, ROCMOP_REQD_WORK_GROUP_SIZE,
+    ROCMOP_PRIVATE_SEGMENT_FIXED_SIZE, ROCMOP_PRIVMODE, ROCMOP_REQD_WORK_GROUP_SIZE,
     ROCMOP_RESERVED_SGPRS, ROCMOP_RESERVED_VGPRS,
     ROCMOP_RUNTIME_HANDLE, ROCMOP_RUNTIME_LOADER_KERNEL_SYMBOL,
-    ROCMOP_SCRATCHBUFFER, ROCMOP_SGPRSNUM, ROCMOP_SPILLEDSGPRS, ROCMOP_SPILLEDVGPRS,
+    ROCMOP_SCRATCHBUFFER, ROCMOP_SGPRSNUM, ROCMOP_SHARED_VGPRS,
+    ROCMOP_SPILLEDSGPRS, ROCMOP_SPILLEDVGPRS,
     ROCMOP_TARGET, ROCMOP_TGSIZE, ROCMOP_TRIPPLE,
     ROCMOP_USE_DEBUG_ENABLED, ROCMOP_USE_DISPATCH_ID,
     ROCMOP_USE_DISPATCH_PTR, ROCMOP_USE_DYNAMIC_CALL_STACK,
     ROCMOP_USE_FLAT_SCRATCH_INIT, ROCMOP_USE_GRID_WORKGROUP_COUNT,
     ROCMOP_USE_KERNARG_SEGMENT_PTR, ROCMOP_USE_ORDERED_APPEND_GDS,
     ROCMOP_USE_PRIVATE_SEGMENT_BUFFER, ROCMOP_USE_PRIVATE_SEGMENT_SIZE,
-    ROCMOP_USE_PTR64, ROCMOP_USE_QUEUE_PTR, ROCMOP_USE_XNACK_ENABLED,
+    ROCMOP_USE_PTR64, ROCMOP_USE_QUEUE_PTR, ROCMOP_USE_WAVE32, ROCMOP_USE_XNACK_ENABLED,
     ROCMOP_USERDATANUM, ROCMOP_VECTYPEHINT, ROCMOP_VGPRSNUM, ROCMOP_WAVEFRONT_SGPR_COUNT,
     ROCMOP_WAVEFRONT_SIZE, ROCM_WORK_GROUP_SIZE_HINT, ROCMOP_WORKGROUP_FBARRIER_COUNT,
     ROCMOP_WORKGROUP_GROUP_SEGMENT_SIZE, ROCMOP_WORKITEM_PRIVATE_SEGMENT_SIZE,
     ROCMOP_WORKITEM_VGPR_COUNT
 };
+
+static const void configToKernelDescriptor(const AsmROCmKernelConfig& config,
+                                      ROCmKernelDescriptor& desc)
+{
+    desc.groupSegmentFixedSize = config.workgroupGroupSegmentSize;
+    desc.privateSegmentFixedSize = config.workitemPrivateSegmentSize;
+    desc.kernelCodeEntryOffset = config.kernelCodeEntryOffset;
+    desc.pgmRsrc1 = config.computePgmRsrc1;
+    desc.pgmRsrc2 = config.computePgmRsrc2;
+    desc.pgmRsrc3 = config.pgmRsrc3;
+    desc.initialKernelExecState = config.enableSgprRegisterFlags;
+}
 
 /*
  * ROCm format handler
@@ -126,6 +141,8 @@ AsmROCmHandler::AsmROCmHandler(Assembler& assembler):
     codeSection = 0;
     sectionDiffsResolvable = true;
     output.newBinFormat = assembler.isNewROCmBinFormat();
+    output.llvm10BinFormat = assembler.isLLVM10BinFormat();
+    output.metadataV3Format = assembler.isROCmMetadataV3();
     output.metadataInfo.initialize();
     output.archMinor = output.archStepping = UINT32_MAX;
     output.eflags = BINGEN_DEFAULT;
@@ -151,6 +168,7 @@ AsmKernelId AsmROCmHandler::addKernel(const char* kernelName)
     /// add kernel config section
     sections.push_back({ thisKernel, AsmSectionType::CONFIG, ELFSECTID_UNDEF, nullptr });
     kernelStates.push_back(new Kernel(thisSection));
+    kernelStates.back()->codeFlags = assembler.codeFlags;
     output.metadataInfo.kernels.push_back(ROCmKernelMetadata());
     output.metadataInfo.kernels.back().initialize();
     output.metadataInfo.kernels.back().name = kernelName;
@@ -302,12 +320,28 @@ AsmFormatHandler::SectionInfo AsmROCmHandler::getSectionInfo(AsmSectionId sectio
     return info;
 }
 
+void AsmROCmHandler::setCodeFlags(Flags codeFlags)
+{
+    if (currentKcodeKernel != ASMKERN_GLOBAL)
+    {
+        Kernel* kernel = kernelStates[currentKcodeKernel];
+        kernel->codeFlags = codeFlags;
+        if (kernel->config != nullptr)
+            kernel->config->enableSgprRegisterFlags =
+                    (kernel->config->enableSgprRegisterFlags & ~ROCMFLAG_USE_WAVE32) |
+                (((codeFlags & ASM_CODE_WAVE32)!=0) ? ROCMFLAG_USE_WAVE32 : 0);
+    }
+}
+
 bool AsmROCmHandler::isCodeSection() const
 {
     return sections[assembler.currentSection].type == AsmSectionType::CODE;
 }
 
 AsmKcodeHandler::KernelBase& AsmROCmHandler::getKernelBase(AsmKernelId index)
+{ return *kernelStates[index]; }
+
+const AsmKcodeHandler::KernelBase& AsmROCmHandler::getKernelBase(AsmKernelId index) const
 { return *kernelStates[index]; }
 
 size_t AsmROCmHandler::getKernelsNum() const
@@ -454,6 +488,23 @@ void AsmROCmPseudoOps::setNewBinFormat(AsmROCmHandler& handler, const char* line
     if (!checkGarbagesAtEnd(asmr, linePtr))
         return;
     handler.output.newBinFormat = true;
+}
+
+void AsmROCmPseudoOps::setLLVM10BinFormat(AsmROCmHandler& handler, const char* linePtr)
+{
+    Assembler& asmr = handler.assembler;
+    if (!checkGarbagesAtEnd(asmr, linePtr))
+        return;
+    handler.output.newBinFormat = true;
+    handler.output.llvm10BinFormat = true;
+}
+
+void AsmROCmPseudoOps::setMetadataV3Format(AsmROCmHandler& handler, const char* linePtr)
+{
+    Assembler& asmr = handler.assembler;
+    if (!checkGarbagesAtEnd(asmr, linePtr))
+        return;
+    handler.output.metadataV3Format = true;
 }
 
 void AsmROCmPseudoOps::addMetadata(AsmROCmHandler& handler, const char* pseudoOpPlace,
@@ -809,6 +860,7 @@ static const std::pair<const char*, cxuint> rocmValueKindNamesTbl[] =
     { "goy", cxuint(ROCmValueKind::HIDDEN_GLOBAL_OFFSET_Y) },
     { "goz", cxuint(ROCmValueKind::HIDDEN_GLOBAL_OFFSET_Z) },
     { "image", cxuint(ROCmValueKind::IMAGE) },
+    { "multigridsyncarg", cxuint(ROCmValueKind::HIDDEN_MULTIGRID_SYNC_ARG) },
     { "none", cxuint(ROCmValueKind::HIDDEN_NONE) },
     { "pipe", cxuint(ROCmValueKind::PIPE) },
     { "printfbuf", cxuint(ROCmValueKind::HIDDEN_PRINTF_BUFFER) },
@@ -888,6 +940,7 @@ void AsmROCmPseudoOps::addKernelArg(AsmROCmHandler& handler, const char* pseudoO
         PSEUDOOP_RETURN_BY_ERROR("Metadata config can't be defined if "
                     "metadata section exists")
     
+    ROCmKernelMetadata& metadata = handler.output.metadataInfo.kernels[asmr.currentKernel];
     bool good = true;
     skipSpacesToEnd(linePtr, end);
     CString argName;
@@ -922,14 +975,16 @@ void AsmROCmPseudoOps::addKernelArg(AsmROCmHandler& handler, const char* pseudoO
         return;
     
     skipSpacesToEnd(linePtr, end);
-    // parse argument alignment
+    // parse argument alignment (or offset for metadatav3)
     uint64_t argAlign = 0;
     if (linePtr!=end && *linePtr!=',')
     {
         const char* valuePlace = linePtr;
         if (getAbsoluteValueArg(asmr, argAlign, linePtr, true))
         {
-            if (argAlign==0 || argAlign != (1ULL<<(63-CLZ64(argAlign))))
+            if (!handler.output.metadataV3Format &&
+                // only for older metadata format is align
+                (argAlign==0 || argAlign != (1ULL<<(63-CLZ64(argAlign)))))
                 ASM_NOTGOOD_BY_ERROR(valuePlace, "Argument alignment is not power of 2")
         }
         else
@@ -937,9 +992,25 @@ void AsmROCmPseudoOps::addKernelArg(AsmROCmHandler& handler, const char* pseudoO
     }
     if (argAlign == 0)
     {
-        argAlign = (argSize!=0) ? 1ULL<<(63-CLZ64(argSize)) : 1;
-        if (argSize > argAlign)
-            argAlign <<= 1;
+        if (!handler.output.metadataV3Format)
+        {
+            argAlign = (argSize!=0) ? 1ULL<<(63-CLZ64(argSize)) : 1;
+            if (argSize > argAlign)
+                argAlign <<= 1;
+        }
+        else
+        {   // metadatav3 format (offset)
+            if (!metadata.argInfos.empty())
+            {
+                size_t realArgAlign = (argSize!=0) ? 1ULL<<(63-CLZ64(argSize)) : 1;
+                if (argSize > realArgAlign)
+                    realArgAlign <<= 1;
+                // calculate arg offset
+                const ROCmKernelArgInfo& prevArg = metadata.argInfos.back();
+                argAlign = (prevArg.offset + prevArg.size + realArgAlign-1) &
+                            ~(realArgAlign-1);
+            }
+        }
     }
     
     if (!skipRequiredComma(asmr, linePtr))
@@ -1047,7 +1118,6 @@ void AsmROCmPseudoOps::addKernelArg(AsmROCmHandler& handler, const char* pseudoO
         return;
     
     handler.output.useMetadataInfo = true;
-    ROCmKernelMetadata& metadata = handler.output.metadataInfo.kernels[asmr.currentKernel];
     // setup kernel arg info
     ROCmKernelArgInfo argInfo{};
     argInfo.name = argName;
@@ -1098,6 +1168,21 @@ bool AsmROCmPseudoOps::checkConfigValue(Assembler& asmr, const char* valuePlace,
                 snprintf(buf, 64, "Used VGPRs number out of range (0-%u)", maxVGPRsNum);
                 ASM_NOTGOOD_BY_ERROR(valuePlace, buf)
             }
+            break;
+        }
+        case ROCMCVAL_SHARED_VGPRSNUM:
+        {
+            const GPUArchitecture arch = getGPUArchitectureFromDeviceType(
+                        asmr.deviceType);
+            if (arch >= GPUArchitecture::GCN1_5 && value > 120)
+            {
+                char buf[64];
+                snprintf(buf, 64, "Shared VGPRs number out of range (0-120)");
+                ASM_NOTGOOD_BY_ERROR(valuePlace, buf)
+            }
+            else if (value != 0)
+                ASM_NOTGOOD_BY_ERROR(valuePlace,
+                        "Shared VGPRS number must be zero for device older than GCN1.5");
             break;
         }
         case ROCMCVAL_EXCEPTIONS:
@@ -1243,11 +1328,17 @@ void AsmROCmPseudoOps::setConfigValueMain(AsmAmdHsaKernelConfig& config,
         case ROCMCVAL_VGPRSNUM:
             config.usedVGPRsNum = value;
             break;
+        case ROCMCVAL_SHARED_VGPRSNUM:
+            config.sharedVGPRsNum = value;
+            break;
         case ROCMCVAL_PGMRSRC1:
             config.computePgmRsrc1 = value;
             break;
         case ROCMCVAL_PGMRSRC2:
             config.computePgmRsrc2 = value;
+            break;
+        case ROCMCVAL_PGMRSRC3:
+            config.pgmRsrc3 = value;
             break;
         case ROCMCVAL_FLOATMODE:
             config.floatMode = value;
@@ -1465,6 +1556,9 @@ void AsmROCmPseudoOps::setConfigBoolValueMain(AsmAmdHsaKernelConfig& config,
         case ROCMCVAL_USE_XNACK_ENABLED:
             config.enableFeatureFlags |= ROCMFLAG_USE_XNACK_ENABLED;
             break;
+        case ROCMCVAL_USE_WAVE32:
+            config.enableSgprRegisterFlags |= ROCMFLAG_USE_WAVE32;
+            break;
         default:
             break;
     }
@@ -1487,6 +1581,12 @@ void AsmROCmPseudoOps::setConfigBoolValue(AsmROCmHandler& handler,
     AsmROCmKernelConfig& config = *(handler.kernelStates[asmr.currentKernel]->config);
     
     setConfigBoolValueMain(config, target);
+    
+    if (target == ROCMCVAL_USE_WAVE32)
+    {
+        AsmROCmHandler::KernelBase& kbase = *(handler.kernelStates[asmr.currentKernel]);
+        kbase.codeFlags |= ASM_CODE_WAVE32;
+    }
 }
 
 void AsmROCmPseudoOps::setDefaultHSAFeatures(AsmROCmHandler& handler,
@@ -1960,6 +2060,9 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_KERNEL_CODE_PREFETCH_SIZE);
             break;
+        case ROCMOP_LLVM10BINFMT:
+            AsmROCmPseudoOps::setLLVM10BinFormat(*this, linePtr);
+            break;
         case ROCMOP_LOCALSIZE:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_WORKGROUP_GROUP_SEGMENT_SIZE);
@@ -1977,6 +2080,9 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
             break;
         case ROCMOP_METADATA:
             AsmROCmPseudoOps::addMetadata(*this, stmtPlace, linePtr);
+            break;
+        case ROCMOP_METADATAV3:
+            AsmROCmPseudoOps::setMetadataV3Format(*this, linePtr);
             break;
         case ROCMOP_MD_GROUP_SEGMENT_FIXED_SIZE:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
@@ -2035,6 +2141,9 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
         case ROCMOP_PGMRSRC2:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr, ROCMCVAL_PGMRSRC2);
             break;
+        case ROCMOP_PGMRSRC3:
+            AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr, ROCMCVAL_PGMRSRC3);
+            break;
         case ROCMOP_PRINTF:
             AsmROCmPseudoOps::addPrintf(*this, stmtPlace, linePtr);
             break;
@@ -2073,6 +2182,10 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
         case ROCMOP_SGPRSNUM:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_SGPRSNUM);
+            break;
+        case ROCMOP_SHARED_VGPRS:
+            AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
+                             ROCMCVAL_SHARED_VGPRSNUM);
             break;
         case ROCMOP_TARGET:
             AsmROCmPseudoOps::setTarget(*this, linePtr, false);
@@ -2135,6 +2248,10 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
             AsmROCmPseudoOps::setConfigBoolValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_USE_XNACK_ENABLED);
             break;
+        case ROCMOP_USE_WAVE32:
+            AsmROCmPseudoOps::setConfigBoolValue(*this, stmtPlace, linePtr,
+                             ROCMCVAL_USE_WAVE32);
+            break;
         case ROCMOP_USERDATANUM:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_USERDATANUM);
@@ -2164,10 +2281,12 @@ bool AsmROCmHandler::parsePseudoOp(const CString& firstName, const char* stmtPla
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_WORKGROUP_FBARRIER_COUNT);
             break;
+        case ROCMOP_GROUP_SEGMENT_FIXED_SIZE:
         case ROCMOP_WORKGROUP_GROUP_SEGMENT_SIZE:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_WORKGROUP_GROUP_SEGMENT_SIZE);
             break;
+        case ROCMOP_PRIVATE_SEGMENT_FIXED_SIZE:
         case ROCMOP_WORKITEM_PRIVATE_SEGMENT_SIZE:
             AsmROCmPseudoOps::setConfigValue(*this, stmtPlace, linePtr,
                              ROCMCVAL_WORKITEM_PRIVATE_SEGMENT_SIZE);
@@ -2196,6 +2315,24 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
     unresolvedGlobals = false;
     size_t sectionsNum = sections.size();
     output.deviceType = assembler.getDeviceType();
+    
+    // check whether ctrlDirSection if llvm10BinFormat
+    if (output.llvm10BinFormat)
+    {
+        for (const Kernel* kernel: kernelStates)
+            if (kernel->ctrlDirSection != ASMSECT_NONE)
+            {
+                good = false;
+                assembler.printError(AsmSourcePos(), "Some kernels have "
+                        "Control directive section if LLVM10 binary format used");
+                break;
+            }
+        if (dataSection == ASMSECT_NONE)
+        {
+            assembler.printError(AsmSourcePos(), "No data section for LLVM10BinFormat");
+            return false;
+        }
+    }
     
     prepareKcodeState();
     
@@ -2295,7 +2432,7 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
             config.amdMachineMinor = amdGpuArchValues.minor;
         if (config.amdMachineStepping == BINGEN16_DEFAULT)
             config.amdMachineStepping = amdGpuArchValues.stepping;
-        if (config.kernelCodeEntryOffset == BINGEN64_DEFAULT)
+        if (config.kernelCodeEntryOffset == BINGEN64_DEFAULT && !output.llvm10BinFormat)
             config.kernelCodeEntryOffset = 256;
         if (config.kernelCodePrefetchOffset == BINGEN64_DEFAULT)
             config.kernelCodePrefetchOffset = 0;
@@ -2313,9 +2450,23 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
         if (config.kernargSegmentSize == BINGEN64_DEFAULT)
         {
             if (output.useMetadataInfo)
+            {
                 // calculate kernel arg size
-                config.kernargSegmentSize = calculateKernelArgSize(
-                        output.metadataInfo.kernels[i].argInfos);
+                if (!output.metadataV3Format)
+                    config.kernargSegmentSize = calculateKernelArgSize(
+                            output.metadataInfo.kernels[i].argInfos);
+                else
+                {
+                    // for metadataV3 format
+                    config.kernargSegmentSize = 0;
+                    if (!output.metadataInfo.kernels[i].argInfos.empty())
+                    {
+                        const ROCmKernelArgInfo& lastArg =
+                            output.metadataInfo.kernels[i].argInfos.back();
+                        config.kernargSegmentSize = lastArg.offset + lastArg.size;
+                    }
+                }
+            }
             else
                 config.kernargSegmentSize = 0;
         }
@@ -2396,7 +2547,9 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
                             GCN_XNACK : 0);
             config.usedSGPRsNum = std::min(
                 std::max(minRegsNum[0], kernelStates[i]->allocRegs[0]) +
-                    getGPUExtraRegsNum(arch, REGTYPE_SGPR, flags|GCN_VCC),
+                    getGPUExtraRegsNum(arch, REGTYPE_SGPR, flags|GCN_VCC|
+                        ((config.enableSgprRegisterFlags & ROCMFLAG_USE_WAVE32) ?
+                                GCN_REG_WAVE32 : 0)),
                     maxSGPRsNum); // include all extra sgprs
         }
         // set usedVGPRsNum
@@ -2409,6 +2562,12 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
         config.computePgmRsrc1 |= calculatePgmRSrc1(arch, vgprsNum, sgprsNum,
                         config.priority, config.floatMode, config.privilegedMode,
                         config.dx10Clamp, config.debugMode, config.ieeeMode);
+        if (output.llvm10BinFormat && output.metadataV3Format &&
+            arch >= GPUArchitecture::GCN1_5)
+            // very weird in current LLVM10 bin format:
+            // SGPR is supplied in PGMRSRC1 for AMD3 format?? why??
+            config.computePgmRsrc1 |= ((sgprsNum-1)>>3)<<6;
+        
         // computePGMRSRC2
         config.computePgmRsrc2 = (config.computePgmRsrc2 & 0xffffe440U) |
                 calculatePgmRSrc2(arch, (config.workitemPrivateSegmentSize != 0),
@@ -2416,6 +2575,18 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
                             (config.computePgmRsrc2 & 0x1b80U), config.tgSize,
                             (output.newBinFormat ? 0 : config.workgroupGroupSegmentSize),
                             config.exceptions);
+        // shared_vgprs
+        cxuint sharedVgprsNum = 0;
+        if (config.sharedVGPRsNum != BINGEN_DEFAULT)
+            sharedVgprsNum = config.sharedVGPRsNum;
+        if (((vgprsNum+7)&~7) + sharedVgprsNum > 256)
+        {
+            assembler.printError(AsmSourcePos(), (std::string(
+                    "Number of total VGPRs with shared VGPRs for kernel '")+
+                    kernelName.c_str()+"' is higher than 256").c_str());
+            good = false;
+        }
+        config.pgmRsrc3 |= calculatePgmRSrc3(arch, sharedVgprsNum);
         
         if (config.wavefrontSgprCount == BINGEN16_DEFAULT)
             config.wavefrontSgprCount = sgprsNum;
@@ -2425,12 +2596,31 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
         if (config.runtimeLoaderKernelSymbol == BINGEN64_DEFAULT)
             config.runtimeLoaderKernelSymbol = 0;
         
-        config.toLE(); // to little-endian
-        // put control directive section to config
-        if (kernel.ctrlDirSection!=ASMSECT_NONE &&
-            assembler.sections[kernel.ctrlDirSection].content.size()==128)
-            ::memcpy(config.controlDirective, 
-                 assembler.sections[kernel.ctrlDirSection].content.data(), 128);
+        ROCmKernelMetadata& kmd = output.metadataInfo.kernels[i];
+        if (kmd.kernargSegmentSize == BINGEN64_NOTSUPPLIED)
+            kmd.kernargSegmentSize = config.kernargSegmentSize;
+        if (kmd.sgprsNum == BINGEN_NOTSUPPLIED)
+            kmd.sgprsNum = sgprsNum;
+        if (kmd.vgprsNum == BINGEN_NOTSUPPLIED)
+            kmd.vgprsNum = vgprsNum;
+        if (kmd.kernargSegmentAlign == BINGEN64_NOTSUPPLIED)
+            kmd.kernargSegmentAlign = config.kernargSegmentAlignment;
+        if (kmd.privateSegmentFixedSize == BINGEN64_NOTSUPPLIED)
+            kmd.privateSegmentFixedSize = config.workitemPrivateSegmentSize;
+        if (kmd.groupSegmentFixedSize == BINGEN64_NOTSUPPLIED)
+            kmd.groupSegmentFixedSize = config.workgroupGroupSegmentSize;
+        if (kmd.wavefrontSize == BINGEN_NOTSUPPLIED)
+            kmd.wavefrontSize = 1U<<config.wavefrontSize;
+        
+        if (!output.llvm10BinFormat)
+        {
+            config.toLE(); // to little-endian
+            // put control directive section to config
+            if (kernel.ctrlDirSection!=ASMSECT_NONE &&
+                assembler.sections[kernel.ctrlDirSection].content.size()==128)
+                ::memcpy(config.controlDirective,
+                    assembler.sections[kernel.ctrlDirSection].content.data(), 128);
+        }
     }
     
     // check kernel symbols and setup kernel configs
@@ -2471,19 +2661,45 @@ bool AsmROCmHandler::prepareSectionDiffsResolving()
         const Kernel& kernel = *kernelStates[ki];
         kinput.offset = symbol.value;
         
-        if (asmCSection.content.size() < symbol.value + sizeof(ROCmKernelConfig))
+        if (!output.llvm10BinFormat)
         {
-            // if kernel configuration out of section size
-            assembler.printError(assembler.kernels[ki].sourcePos, (std::string(
-                "Code for kernel '")+kinput.symbolName.c_str()+
-                "' is too small for configuration").c_str());
-            good = false;
-            continue;
+            if (asmCSection.content.size() < symbol.value + sizeof(ROCmKernelConfig))
+            {
+                // if kernel configuration out of section size
+                assembler.printError(assembler.kernels[ki].sourcePos, (std::string(
+                    "Code for kernel '")+kinput.symbolName.c_str()+
+                    "' is too small for configuration").c_str());
+                good = false;
+                continue;
+            }
+            else if (kernel.config!=nullptr)
+                // put config to code section
+                ::memcpy(asmCSection.content.data() + symbol.value,
+                        kernel.config.get(), sizeof(ROCmKernelConfig));
         }
-        else if (kernel.config!=nullptr)
-            // put config to code section
-            ::memcpy(asmCSection.content.data() + symbol.value,
-                     kernel.config.get(), sizeof(ROCmKernelConfig));
+        else
+        {
+            AsmSection& asmDSection = assembler.sections[dataSection];
+            if (asmDSection.content.size() < sizeof(ROCmKernelDescriptor)*(ki+1))
+            {
+                // if kernel descriptor out of section size
+                assembler.printError(assembler.kernels[ki].sourcePos, (std::string(
+                    "Global data for kernel '")+kinput.symbolName.c_str()+
+                    "' is too small for descriptor").c_str());
+                good = false;
+                continue;
+            }
+            else if (kernel.config!=nullptr)
+            {
+                AsmROCmKernelConfig& config = *kernel.config.get();
+                // put kernel descriptor to global data
+                ROCmKernelDescriptor kdesc{};
+                configToKernelDescriptor(config, kdesc);
+                kdesc.toLE();
+                ::memcpy(asmDSection.content.data() + ki*sizeof(ROCmKernelDescriptor),
+                         &kdesc, sizeof(ROCmKernelDescriptor));
+            }
+        }
         // set symbol type
         kinput.type = kernel.isFKernel ? ROCmRegionType::FKERNEL : ROCmRegionType::KERNEL;
     }

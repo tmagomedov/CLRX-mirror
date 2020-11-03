@@ -42,3 +42,11 @@ ADD_TEST(ROCmBinGen ROCmBinGen)
 ADD_EXECUTABLE(ROCmMetadata ROCmMetadata.cpp)
 TEST_LINK_LIBRARIES(ROCmMetadata CLRXAmdBin CLRXUtils)
 ADD_TEST(ROCmMetadata ROCmMetadata)
+
+ADD_EXECUTABLE(ROCmMsgPack ROCmMsgPack.cpp)
+TEST_LINK_LIBRARIES(ROCmMsgPack CLRXAmdBin CLRXUtils)
+ADD_TEST(ROCmMsgPack ROCmMsgPack)
+
+ADD_EXECUTABLE(ROCmMsgPackWrite ROCmMsgPackWrite.cpp)
+TEST_LINK_LIBRARIES(ROCmMsgPackWrite CLRXAmdBin CLRXUtils)
+ADD_TEST(ROCmMsgPackWrite ROCmMsgPackWrite)

@@ -17,33 +17,15 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#ifndef __CLRXTEST_GCNDISASMOPC_H__
-#define __CLRXTEST_GCNDISASMOPC_H__
+#include <CLRX/Config.h>
+#include <cassert>
+#include <cstring>
+#include <unordered_set>
+#include <CLRX/amdbin/ElfBinaries.h>
+#include <CLRX/utils/Utilities.h>
+#include <CLRX/utils/MemAccess.h>
+#include <CLRX/utils/InputOutput.h>
+#include <CLRX/utils/Containers.h>
+#include <CLRX/amdbin/Amd3Binaries.h>
 
-#include <cstdint>
-
-struct GCNDisasmOpcodeCase
-{
-    uint32_t word0, word1;
-    bool twoWords;
-    const char* expected;
-};
-
-struct GCNDisasmOpcodeCase2
-{
-    uint32_t words[6];
-    cxuint wordsNum;
-    const char* expected;
-};
-
-extern const GCNDisasmOpcodeCase decGCNOpcodeCases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN11Cases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN12Cases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN14Cases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN141Cases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN15Cases[];
-extern const GCNDisasmOpcodeCase2 decGCNOpcodeGCN15Cases2[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN151Cases[];
-extern const GCNDisasmOpcodeCase decGCNOpcodeGCN15W32Cases[];
-
-#endif
+using namespace CLRX;
